@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import type { RoISClient } from "@openrois/sdk";
 import { NAVIGATION_REF, STATUS_POLL_MS } from "../config";
 
@@ -13,8 +13,6 @@ export function useComponentStatus(
   intervalMs: number = STATUS_POLL_MS,
 ): string {
   const [status, setStatus] = useState("UNKNOWN");
-  const clientRef = useRef(client);
-  clientRef.current = client;
 
   useEffect(() => {
     if (!client) return;
@@ -23,10 +21,9 @@ export function useComponentStatus(
 
     const poll = async () => {
       try {
-        const c = clientRef.current;
-        if (!c || cancelled) return;
+        if (cancelled) return;
 
-        const results = await c.query(NAVIGATION_REF, "component_status");
+        const results = await client.query(NAVIGATION_REF, "component_status");
         if (cancelled) return;
 
         const statusResult = results.find((r) => r.name === "status");

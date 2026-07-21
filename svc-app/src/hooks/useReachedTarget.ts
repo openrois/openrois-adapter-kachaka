@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import type { RoISClient } from "@openrois/sdk";
+import type { EventEmitter } from "events";
 import { NAVIGATION_REF } from "../config";
 
 interface ReachedTargetEvent {
@@ -40,6 +41,9 @@ export function useReachedTarget(client: RoISClient | null): ReachedTargetEvent 
       });
 
     // Listen for the convenience event emitted by the SDK.
+    // RoISClient extends EventEmitter but the type declaration does not
+    // expose on/off directly, so we cast to EventEmitter.
+    const emitter = client as unknown as EventEmitter;
     const handler = (notification: {
       params: { results?: { name: string; value: string }[] };
     }) => {
@@ -52,10 +56,10 @@ export function useReachedTarget(client: RoISClient | null): ReachedTargetEvent 
       });
     };
 
-    client.on("reached_target", handler);
+    emitter.on("reached_target", handler);
 
     return () => {
-      client.off("reached_target", handler);
+      emitter.off("reached_target", handler);
       if (subId) {
         client.unsubscribe(subId).catch(() => {});
       }

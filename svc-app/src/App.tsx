@@ -21,6 +21,9 @@ function App() {
   const [arrivalMessage, setArrivalMessage] = useState<string | null>(null);
 
   // Clear selection and show arrival message when reached_target fires.
+  // The effect synchronizes with an external event (the subscription),
+  // so setState here is the correct pattern.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (arrivedTarget) {
       setSelectedWaypoint(null);
@@ -31,6 +34,7 @@ function App() {
       return () => clearTimeout(timer);
     }
   }, [arrivedTarget]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleNavigate = async () => {
     if (!client || !selectedWaypoint || status === "BUSY") return;

@@ -139,3 +139,16 @@
   display: block;
   background: #f0f0f0;
 }
+
+/* Responsive: stack panel below map on narrow screens. */
+@media (max-width: 768px) {
+  .main {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .status-panel {
+    width: 100%;
+    max-width: 447px;
+  }
+}

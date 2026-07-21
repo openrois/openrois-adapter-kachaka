@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import type { RoISClient } from "@openrois/sdk";
 import { SYSTEM_INFO_REF, POSITION_POLL_MS } from "../config";
 
@@ -19,8 +19,6 @@ export function useRobotPosition(
   intervalMs: number = POSITION_POLL_MS,
 ): RobotPosition | null {
   const [position, setPosition] = useState<RobotPosition | null>(null);
-  const clientRef = useRef(client);
-  clientRef.current = client;
 
   useEffect(() => {
     if (!client) return;
@@ -29,10 +27,9 @@ export function useRobotPosition(
 
     const poll = async () => {
       try {
-        const c = clientRef.current;
-        if (!c || cancelled) return;
+        if (cancelled) return;
 
-        const results = await c.query(SYSTEM_INFO_REF, "robot_position");
+        const results = await client.query(SYSTEM_INFO_REF, "robot_position");
         if (cancelled) return;
 
         const posData = results.find((r) => r.name === "position_data");
