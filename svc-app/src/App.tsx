@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { GATEWAY_URL, NAVIGATION_REF } from "./config";
 import { useRoISClient } from "./hooks/useRoISClient";
 import { useWaypoints } from "./hooks/useWaypoints";
 import { useRobotPosition } from "./hooks/useRobotPosition";
 import { useComponentStatus } from "./hooks/useComponentStatus";
+import { useReachedTarget } from "./hooks/useReachedTarget";
 import { ConnectionIndicator } from "./components/ConnectionIndicator";
 import { MapView } from "./components/MapView";
 import { StatusPanel } from "./components/StatusPanel";
@@ -14,8 +15,22 @@ function App() {
   const waypoints = useWaypoints(client);
   const robotPosition = useRobotPosition(client);
   const status = useComponentStatus(client);
+  const { target: arrivedTarget } = useReachedTarget(client);
   const [selectedWaypoint, setSelectedWaypoint] = useState<string | null>(null);
   const [commandId, setCommandId] = useState<string | null>(null);
+  const [arrivalMessage, setArrivalMessage] = useState<string | null>(null);
+
+  // Clear selection and show arrival message when reached_target fires.
+  useEffect(() => {
+    if (arrivedTarget) {
+      setSelectedWaypoint(null);
+      setCommandId(null);
+      setArrivalMessage(`Arrived at ${arrivedTarget}`);
+      // Clear the arrival message after 5 seconds.
+      const timer = setTimeout(() => setArrivalMessage(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [arrivedTarget]);
 
   const handleNavigate = async () => {
     if (!client || !selectedWaypoint || status === "BUSY") return;
@@ -53,6 +68,7 @@ function App() {
           status={status}
           selectedWaypoint={selectedWaypoint}
           commandId={commandId}
+          arrivalMessage={arrivalMessage}
           onNavigate={handleNavigate}
           onClearSelection={() => setSelectedWaypoint(null)}
         />

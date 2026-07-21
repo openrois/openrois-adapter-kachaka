@@ -62,6 +62,16 @@
   color: var(--text-h);
 }
 
+.arrival-message {
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--accent);
+  font-weight: 500;
+}
+
 .status-row {
   display: flex;
   justify-content: space-between;

@@ -3,19 +3,21 @@ interface StatusPanelProps {
   status: string;
   selectedWaypoint: string | null;
   commandId: string | null;
+  arrivalMessage: string | null;
   onNavigate: () => void;
   onClearSelection: () => void;
 }
 
 /**
  * Side panel showing connection state, component status, selected waypoint,
- * command ID, and a Navigate button.
+ * command ID, arrival message, and a Navigate button.
  */
 export function StatusPanel({
   connected,
   status,
   selectedWaypoint,
   commandId,
+  arrivalMessage,
   onNavigate,
   onClearSelection,
 }: StatusPanelProps) {
@@ -26,6 +28,12 @@ export function StatusPanel({
   return (
     <div className="status-panel">
       <h2>Status</h2>
+
+      {arrivalMessage && (
+        <div className="arrival-message">
+          {arrivalMessage}
+        </div>
+      )}
 
       <div className="status-row">
         <span className="status-label">Connection</span>
