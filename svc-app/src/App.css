@@ -39,6 +39,92 @@
   max-width: 100%;
 }
 
+.main {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.status-panel {
+  width: 220px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.status-panel h2 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text-h);
+}
+
+.status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+
+.status-label {
+  color: var(--text);
+}
+
+.status-value {
+  color: var(--text-h);
+  font-weight: 500;
+}
+
+.status-value.mono {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.status-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.navigate-button,
+.clear-button {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.navigate-button {
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-color: var(--accent-border);
+}
+
+.navigate-button:hover:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
+}
+
+.navigate-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.clear-button {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.clear-button:hover {
+  background: var(--border);
+}
+
 .map-container svg {
   display: block;
   background: #f0f0f0;
