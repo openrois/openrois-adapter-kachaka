@@ -12,6 +12,25 @@
   color: var(--text-h);
 }
 
+.connection-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.connection-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.connection-text {
+  font-family: var(--mono);
+}
+
 .map-container {
   border: 1px solid var(--border);
   border-radius: 8px;

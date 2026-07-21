@@ -1,10 +1,15 @@
-import { MAP_IMAGE_WIDTH, MAP_IMAGE_HEIGHT } from "./config";
+import { MAP_IMAGE_WIDTH, MAP_IMAGE_HEIGHT, GATEWAY_URL } from "./config";
+import { useRoISClient } from "./hooks/useRoISClient";
+import { ConnectionIndicator } from "./components/ConnectionIndicator";
 import "./App.css";
 
 function App() {
+  const { connected, error } = useRoISClient(GATEWAY_URL);
+
   return (
     <div className="app">
       <h1>Kachaka Map</h1>
+      <ConnectionIndicator connected={connected} error={error} />
       <div className="map-container">
         <svg
           width={MAP_IMAGE_WIDTH}
