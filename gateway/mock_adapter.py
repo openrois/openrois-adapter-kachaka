@@ -74,7 +74,7 @@ class MockAdapter:
                 results=[
                     Result(name="timestamp", data_type_ref="DateTime", value=ts),
                     Result(name="robot_ref", data_type_ref="RoIS_IdentifierList", value='["kachaka"]'),
-                    Result(name="position_data", data_type_ref="RoLoData[]", value='["1.23","4.56","0.78"]'),
+                    Result(name="position_data", data_type_ref="RoLoData[]", value='["0.0","0.0","0.0"]'),
                 ],
             )
 

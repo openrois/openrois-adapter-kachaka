@@ -1,5 +1,5 @@
 import { MAP_IMAGE_WIDTH, MAP_IMAGE_HEIGHT, worldToPixel } from "../config";
-import { WaypointPin } from "./MapIcons";
+import { WaypointPin, RobotMarker } from "./MapIcons";
 import type { Waypoint } from "../hooks/useWaypoints";
 
 interface MapViewProps {
@@ -10,9 +10,7 @@ interface MapViewProps {
 }
 
 /**
- * SVG-based map with waypoint pin overlays.
- *
- * The robot marker is not rendered yet (stage 4).
+ * SVG-based map with waypoint pin and robot marker overlays.
  */
 export function MapView({
   waypoints,
@@ -36,6 +34,20 @@ export function MapView({
         width={MAP_IMAGE_WIDTH}
         height={MAP_IMAGE_HEIGHT}
       />
+
+      {/* Robot marker */}
+      {robotPosition && (() => {
+        const [px, py] = worldToPixel(robotPosition.x, robotPosition.y);
+        return (
+          <RobotMarker
+            x={px}
+            y={py}
+            theta={robotPosition.theta}
+            scale={1.0}
+            color="#000000"
+          />
+        );
+      })()}
 
       {/* Waypoint pins */}
       {waypoints.map((wp) => {
@@ -69,9 +81,6 @@ export function MapView({
           </g>
         );
       })}
-
-      {/* Robot marker placeholder (stage 4) */}
-      {robotPosition && null}
     </svg>
   );
 }
