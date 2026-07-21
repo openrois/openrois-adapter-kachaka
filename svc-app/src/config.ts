@@ -20,7 +20,7 @@ export const NAVIGATION_REF = "kachaka/Navigation";
 export const SYSTEM_INFO_REF = "kachaka/SystemInformation";
 
 /** Polling intervals in milliseconds. */
-export const POSITION_POLL_MS = 500;
+export const POSITION_POLL_MS = 250;
 export const STATUS_POLL_MS = 1000;
 
 /**

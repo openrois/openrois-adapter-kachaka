@@ -8,6 +8,8 @@ the intern's KachakaAdapter exists or a real Kachaka robot is available.
 from __future__ import annotations
 
 import asyncio
+import json
+import math
 import uuid
 from datetime import datetime, timezone
 
@@ -42,21 +44,37 @@ _LOCATIONS = [
     {"id": "home", "name": "充電ドック", "pose": {"x": 0.033114, "y": -0.062141, "theta": -0.020478307179586677}},
 ]
 
-_LOCATION_NAMES = {loc["name"] for loc in _LOCATIONS}
-_LOCATION_IDS = {loc["id"] for loc in _LOCATIONS}
+# Build a lookup from name or id to the location dict.
+_LOCATION_BY_KEY: dict[str, dict] = {}
+for loc in _LOCATIONS:
+    _LOCATION_BY_KEY[loc["name"]] = loc
+    _LOCATION_BY_KEY[loc["id"]] = loc
 
-# Simulated command state. The mock simulates a 3-second navigation.
-_COMMAND_DURATION_SEC = 3.0
+# Movement simulation: the robot moves at a fixed speed (meters per second).
+# The poller updates the position at a fixed interval.
+_MOVE_SPEED_MPS = 0.5
+_MOVE_POLL_SEC = 0.1
 
 
 class MockAdapter:
     """Minimal BusAdapter implementation with hardcoded responses."""
 
     def __init__(self) -> None:
+        # Robot state: current position (x, y, theta) in map frame.
+        self._robot_x = 0.0
+        self._robot_y = 0.0
+        self._robot_theta = 0.0
+
+        # Command state.
         self._command_running = False
         self._current_command_id: CommandId = ""
         self._current_target: str = ""
-        self._subscriptions: dict[SubscribeId, asyncio.Task[None]] = {}
+        self._target_x = 0.0
+        self._target_y = 0.0
+        self._target_theta = 0.0
+        self._move_task: asyncio.Task[None] | None = None
+
+        self._subscriptions: dict[SubscribeId, EventSink] = {}
 
     async def discover(self, request: DiscoverRequest) -> DiscoverResponse:
         return DiscoverResponse(
@@ -69,12 +87,15 @@ class MockAdapter:
 
         if qt == "robot_position":
             ts = datetime.now(timezone.utc).isoformat()
+            x = f"{self._robot_x:.6f}"
+            y = f"{self._robot_y:.6f}"
+            theta = f"{self._robot_theta:.6f}"
             return QueryResponse(
                 return_code=ReturnCode.OK,
                 results=[
                     Result(name="timestamp", data_type_ref="DateTime", value=ts),
                     Result(name="robot_ref", data_type_ref="RoIS_IdentifierList", value='["kachaka"]'),
-                    Result(name="position_data", data_type_ref="RoLoData[]", value='["0.0","0.0","0.0"]'),
+                    Result(name="position_data", data_type_ref="RoLoData[]", value=f'["{x}","{y}","{theta}"]'),
                 ],
             )
 
@@ -104,8 +125,6 @@ class MockAdapter:
             target = ""
             for p in request.parameters:
                 if p.name == "target_positions":
-                    # The value is a JSON-encoded list of strings.
-                    import json
                     positions = json.loads(p.value)
                     if positions:
                         target = positions[0]
@@ -115,18 +134,32 @@ class MockAdapter:
                 return InvokeResponse(return_code=ReturnCode.BAD_PARAMETER)
 
             # Check if the target is a known location name or id.
-            if target not in _LOCATION_NAMES and target not in _LOCATION_IDS:
+            if target not in _LOCATION_BY_KEY:
                 return InvokeResponse(return_code=ReturnCode.BAD_PARAMETER)
 
+            loc = _LOCATION_BY_KEY[target]
             self._command_running = True
             self._current_command_id = f"mock-cmd-{uuid.uuid4().hex[:8]}"
             self._current_target = target
+            self._target_x = loc["pose"]["x"]
+            self._target_y = loc["pose"]["y"]
+            self._target_theta = loc["pose"]["theta"]
+
+            # Start the movement simulation task.
+            if self._move_task is not None:
+                self._move_task.cancel()
+            self._move_task = asyncio.create_task(self._move_to_target())
+
             return InvokeResponse(
                 return_code=ReturnCode.OK,
                 command_id=self._current_command_id,
             )
 
         if ct == CommandType.STOP:
+            # Cancel the movement task.
+            if self._move_task is not None:
+                self._move_task.cancel()
+                self._move_task = None
             self._command_running = False
             self._current_command_id = ""
             self._current_target = ""
@@ -145,57 +178,84 @@ class MockAdapter:
         sink: EventSink,
     ) -> SubscribeResponse:
         sub_id = f"mock-sub-{uuid.uuid4().hex[:8]}"
-        task = asyncio.create_task(self._poll_command_state(sub_id, sink))
-        self._subscriptions[sub_id] = task
+        self._subscriptions[sub_id] = sink
         return SubscribeResponse(return_code=ReturnCode.OK, subscribe_id=sub_id)
 
     async def unsubscribe(self, subscribe_id: SubscribeId) -> ReturnCode:
-        task = self._subscriptions.pop(subscribe_id, None)
-        if task is not None:
-            task.cancel()
+        self._subscriptions.pop(subscribe_id, None)
         return ReturnCode.OK
 
-    async def _poll_command_state(self, sub_id: SubscribeId, sink: EventSink) -> None:
-        """Simulate polling: wait for a command to start, then emit events on completion."""
+    async def _move_to_target(self) -> None:
+        """Simulate movement from current position to target waypoint.
+
+        Updates self._robot_x, self._robot_y, self._robot_theta at a fixed
+        interval. Theta is computed as the heading from the current position
+        to the target. When the robot reaches the target, emits reached_target
+        and completed events to all active subscribers.
+        """
         try:
-            # Wait until a command is running.
-            while not self._command_running:
-                await asyncio.sleep(0.5)
+            while True:
+                dx = self._target_x - self._robot_x
+                dy = self._target_y - self._robot_y
+                dist = math.hypot(dx, dy)
 
-            # Wait for the simulated command duration.
-            await asyncio.sleep(_COMMAND_DURATION_SEC)
+                if dist < 0.01:
+                    # Reached the target. Snap to exact position.
+                    self._robot_x = self._target_x
+                    self._robot_y = self._target_y
+                    self._robot_theta = self._target_theta
+                    break
 
-            if not self._command_running:
-                # Command was cancelled (STOP) while we were waiting.
-                return
+                # Compute heading toward target.
+                self._robot_theta = math.atan2(dy, dx)
 
-            # Emit reached_target event.
+                # Move one step toward the target.
+                step = _MOVE_SPEED_MPS * _MOVE_POLL_SEC
+                if dist <= step:
+                    self._robot_x = self._target_x
+                    self._robot_y = self._target_y
+                    self._robot_theta = self._target_theta
+                    break
+
+                self._robot_x += (dx / dist) * step
+                self._robot_y += (dy / dist) * step
+
+                await asyncio.sleep(_MOVE_POLL_SEC)
+
+            # Arrived. Emit events to all subscribers.
             target = self._current_target
             self._command_running = False
             self._current_command_id = ""
             self._current_target = ""
+            self._move_task = None
 
-            reached_event = EventEnvelope(
-                event_id=f"mock-evt-{uuid.uuid4().hex[:8]}",
-                event_type="reached_target",
-                subscribe_id=sub_id,
-                component_ref="kachaka/Navigation",
-                payload=[
-                    Result(name="target", data_type_ref="string", value=target),
-                    Result(name="is_final_target", data_type_ref="bool", value="true"),
-                ],
-            )
-            await sink(reached_event)
+            for sub_id, sink in list(self._subscriptions.items()):
+                reached_event = EventEnvelope(
+                    event_id=f"mock-evt-{uuid.uuid4().hex[:8]}",
+                    event_type="reached_target",
+                    subscribe_id=sub_id,
+                    component_ref="kachaka/Navigation",
+                    payload=[
+                        Result(name="target", data_type_ref="string", value=target),
+                        Result(name="is_final_target", data_type_ref="bool", value="true"),
+                    ],
+                )
+                try:
+                    await sink(reached_event)
+                except Exception:
+                    pass
 
-            # Emit completed event.
-            completed_event = EventEnvelope(
-                event_id=f"mock-evt-{uuid.uuid4().hex[:8]}",
-                event_type="completed",
-                subscribe_id=sub_id,
-                component_ref="kachaka/Navigation",
-                completed_status=CompletedStatus.OK,
-            )
-            await sink(completed_event)
+                completed_event = EventEnvelope(
+                    event_id=f"mock-evt-{uuid.uuid4().hex[:8]}",
+                    event_type="completed",
+                    subscribe_id=sub_id,
+                    component_ref="kachaka/Navigation",
+                    completed_status=CompletedStatus.OK,
+                )
+                try:
+                    await sink(completed_event)
+                except Exception:
+                    pass
 
         except asyncio.CancelledError:
-            pass
+            self._move_task = None
