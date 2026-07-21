@@ -36,11 +36,10 @@ from openrois.interfaces.service import CompletedStatus
 
 _COMPONENT_REFS = ["kachaka/Navigation", "kachaka/SystemInformation"]
 
-# Simulated locations (waypoints).
+# Simulated locations (waypoints) from the Kachaka unicorn map.
 _LOCATIONS = [
-    {"id": "loc_1", "name": "Kitchen", "pose": {"x": 1.2, "y": 3.4, "theta": 0.0}},
-    {"id": "loc_2", "name": "Living Room", "pose": {"x": 5.1, "y": 2.0, "theta": 1.57}},
-    {"id": "loc_3", "name": "Bedroom", "pose": {"x": 0.5, "y": 0.8, "theta": 3.14}},
+    {"id": "S01_home", "name": "シェルフのホーム", "pose": {"x": 3.773288, "y": -1.30068, "theta": 1.785376}},
+    {"id": "home", "name": "充電ドック", "pose": {"x": 0.033114, "y": -0.062141, "theta": -0.020478307179586677}},
 ]
 
 _LOCATION_NAMES = {loc["name"] for loc in _LOCATIONS}

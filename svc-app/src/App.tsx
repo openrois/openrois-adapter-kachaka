@@ -1,31 +1,27 @@
-import { MAP_IMAGE_WIDTH, MAP_IMAGE_HEIGHT, GATEWAY_URL } from "./config";
+import { useState } from "react";
+import { GATEWAY_URL } from "./config";
 import { useRoISClient } from "./hooks/useRoISClient";
+import { useWaypoints } from "./hooks/useWaypoints";
 import { ConnectionIndicator } from "./components/ConnectionIndicator";
+import { MapView } from "./components/MapView";
 import "./App.css";
 
 function App() {
-  const { connected, error } = useRoISClient(GATEWAY_URL);
+  const { client, connected, error } = useRoISClient(GATEWAY_URL);
+  const waypoints = useWaypoints(client);
+  const [selectedWaypoint, setSelectedWaypoint] = useState<string | null>(null);
 
   return (
     <div className="app">
       <h1>Kachaka Map</h1>
       <ConnectionIndicator connected={connected} error={error} />
       <div className="map-container">
-        <svg
-          width={MAP_IMAGE_WIDTH}
-          height={MAP_IMAGE_HEIGHT}
-          viewBox={`0 0 ${MAP_IMAGE_WIDTH} ${MAP_IMAGE_HEIGHT}`}
-          preserveAspectRatio="xMidYMid meet"
-          style={{ maxWidth: "100%", height: "auto", display: "block" }}
-        >
-          <image
-            href="/kachaka_map.webp"
-            x={0}
-            y={0}
-            width={MAP_IMAGE_WIDTH}
-            height={MAP_IMAGE_HEIGHT}
-          />
-        </svg>
+        <MapView
+          waypoints={waypoints}
+          robotPosition={null}
+          selectedWaypoint={selectedWaypoint}
+          onSelectWaypoint={setSelectedWaypoint}
+        />
       </div>
     </div>
   );
