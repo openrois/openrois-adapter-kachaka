@@ -49,7 +49,10 @@ interface RobotMarkerProps extends IconProps {
 }
 
 export function RobotMarker({ x, y, theta, scale, color }: RobotMarkerProps) {
-  const degrees = (theta * 180) / Math.PI;
+  // Negate theta because SVG rotate() is clockwise (Y-down) but the map
+  // coordinate system is Y-up (counterclockwise). The worldToPixel function
+  // flips the Y axis, so the rotation direction must also be flipped.
+  const degrees = -(theta * 180) / Math.PI;
   return (
     <g transform={`translate(${x}, ${y}) rotate(${degrees}) scale(${scale}) translate(-12, -12)`}>
       <path
