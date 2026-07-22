@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@coarobo/capf-sdk": "file:../../capf-sdk-js/packages/sdk",
+    "@openrois/interfaces": "file:../../../openrois/openrois/interfaces/typescript",
     "@openrois/sdk": "file:../../../openrois/openrois/sdk/typescript",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"

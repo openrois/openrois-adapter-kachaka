@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import type { RoISClient } from "@openrois/sdk";
 import type { EventEmitter } from "events";
+import { NavigationReachedTargetEventSchema } from "@openrois/interfaces/components";
 import { NAVIGATION_REF } from "../config";
 
 interface ReachedTargetEvent {
@@ -16,6 +17,9 @@ interface ReachedTargetEvent {
  * as a convenience event. The notification params contain a results
  * array with { name: "target", value: "Kitchen" } and
  * { name: "is_final_target", value: "true" }.
+ *
+ * The payload is parsed into a NavigationReachedTargetEvent via its zod
+ * schema for type safety.
  *
  * Returns the last arrival event. Unsubscribes on unmount.
  */
@@ -50,10 +54,16 @@ export function useReachedTarget(client: RoISClient | null): ReachedTargetEvent 
       const results = notification.params?.results ?? [];
       const target = results.find((r) => r.name === "target");
       const isFinal = results.find((r) => r.name === "is_final_target");
-      setEvent({
-        target: target?.value ?? null,
-        isFinal: isFinal ? isFinal.value === "true" : null,
-      });
+      if (target && isFinal) {
+        const parsed = NavigationReachedTargetEventSchema.parse({
+          target: target.value,
+          is_final_target: isFinal.value === "true",
+        });
+        setEvent({
+          target: parsed.target,
+          isFinal: parsed.is_final_target,
+        });
+      }
     };
 
     emitter.on("reached_target", handler);

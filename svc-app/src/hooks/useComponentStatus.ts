@@ -1,18 +1,22 @@
 import { useState, useEffect } from "react";
 import type { RoISClient } from "@openrois/sdk";
+import { ComponentStatusSchema, type ComponentStatus } from "@openrois/interfaces/common";
 import { NAVIGATION_REF, STATUS_POLL_MS } from "../config";
 
 /**
  * Poll component_status from the Navigation component at a fixed interval.
  *
- * Returns "READY", "BUSY", or "ERROR". Returns "UNKNOWN" until the first
- * successful poll.
+ * The gateway returns a Result[] with a single Result whose name is
+ * "component_status" and whose value is the ComponentStatus enum string
+ * ("READY", "BUSY", etc.).
+ *
+ * Returns "UNKNOWN" until the first successful poll.
  */
 export function useComponentStatus(
   client: RoISClient | null,
   intervalMs: number = STATUS_POLL_MS,
-): string {
-  const [status, setStatus] = useState("UNKNOWN");
+): ComponentStatus | "UNKNOWN" {
+  const [status, setStatus] = useState<ComponentStatus | "UNKNOWN">("UNKNOWN");
 
   useEffect(() => {
     if (!client) return;
@@ -26,9 +30,9 @@ export function useComponentStatus(
         const results = await client.query(NAVIGATION_REF, "component_status");
         if (cancelled) return;
 
-        const statusResult = results.find((r) => r.name === "status");
+        const statusResult = results.find((r) => r.name === "component_status");
         if (statusResult) {
-          setStatus(statusResult.value);
+          setStatus(ComponentStatusSchema.parse(statusResult.value));
         }
       } catch {
         // Ignore polling errors. Status stays at last known value.

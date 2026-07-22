@@ -26,6 +26,9 @@ from openrois.interfaces.bus import (
     SubscribeResponse,
 )
 from openrois.interfaces.common import ComponentStatus
+from openrois.interfaces.components import (
+    SystemInformationRobotPositionResult,
+)
 from openrois.interfaces.hri import (
     CommandId,
     CommandType,
@@ -90,29 +93,48 @@ class MockAdapter:
             x = f"{self._robot_x:.6f}"
             y = f"{self._robot_y:.6f}"
             theta = f"{self._robot_theta:.6f}"
+            # Use the SystemInformationRobotPositionResult Pydantic model,
+            # same as the real adapter's pose_to_robot_position_result().
+            position_model = SystemInformationRobotPositionResult(
+                timestamp=ts,
+                robot_ref=["kachaka"],
+                position_data=[x, y, theta],
+            )
             return QueryResponse(
                 return_code=ReturnCode.OK,
                 results=[
-                    Result(name="timestamp", data_type_ref="DateTime", value=ts),
-                    Result(name="robot_ref", data_type_ref="RoIS_IdentifierList", value='["kachaka"]'),
-                    Result(name="position_data", data_type_ref="RoLoData[]", value=f'["{x}","{y}","{theta}"]'),
+                    Result(
+                        name="robot_position",
+                        data_type_ref="SystemInformationRobotPositionResult",
+                        value=position_model.model_dump_json(),
+                    ),
                 ],
             )
 
         if qt == "waypoints":
-            import json
             results = []
             for loc in _LOCATIONS:
+                # Schema-compliant: pipe-delimited "id|name|x|y|theta" format.
+                # Matches the real adapter's locations_to_waypoints_result().
+                value = "|".join([
+                    loc["id"],
+                    loc["name"],
+                    str(loc["pose"]["x"]),
+                    str(loc["pose"]["y"]),
+                    str(loc["pose"]["theta"]),
+                ])
                 results.append(
-                    Result(name="waypoint", data_type_ref="Waypoint", value=json.dumps(loc))
+                    Result(name=loc["name"], data_type_ref="waypoint", value=value)
                 )
             return QueryResponse(return_code=ReturnCode.OK, results=results)
 
         if qt == "component_status":
             status = ComponentStatus.BUSY if self._command_running else ComponentStatus.READY
+            # Matches the real adapter: value is the bare ComponentStatus enum
+            # string (e.g. "READY", "BUSY").
             return QueryResponse(
                 return_code=ReturnCode.OK,
-                results=[Result(name="status", data_type_ref="ComponentStatus", value=status.value)],
+                results=[Result(name="component_status", data_type_ref="NavigationStatusResult", value=status.value)],
             )
 
         return QueryResponse(return_code=ReturnCode.UNSUPPORTED)

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import type { RoISClient } from "@openrois/sdk";
+import { SystemInformationRobotPositionResultSchema } from "@openrois/interfaces/components";
 import { SYSTEM_INFO_REF, POSITION_POLL_MS } from "../config";
 
 interface RobotPosition {
@@ -11,8 +12,10 @@ interface RobotPosition {
 /**
  * Poll robot_position from the SystemInformation component at a fixed interval.
  *
- * The gateway returns a Result[] with a "position_data" result whose value
- * is a JSON array of strings: ["1.23", "4.56", "0.78"] (x, y, theta).
+ * The gateway returns a Result[] with a single Result whose name is
+ * "robot_position" and whose value is a JSON-serialised
+ * SystemInformationRobotPositionResult model:
+ * { timestamp, robot_ref, position_data: ["x", "y", "theta"] }.
  */
 export function useRobotPosition(
   client: RoISClient | null,
@@ -32,9 +35,12 @@ export function useRobotPosition(
         const results = await client.query(SYSTEM_INFO_REF, "robot_position");
         if (cancelled) return;
 
-        const posData = results.find((r) => r.name === "position_data");
-        if (posData) {
-          const [x, y, theta] = JSON.parse(posData.value).map(Number);
+        const posResult = results.find((r) => r.name === "robot_position");
+        if (posResult) {
+          const model = SystemInformationRobotPositionResultSchema.parse(
+            JSON.parse(posResult.value),
+          );
+          const [x, y, theta] = model.position_data.map(Number);
           setPosition({ x, y, theta });
         }
       } catch {
