@@ -114,15 +114,17 @@ class MockAdapter:
         if qt == "waypoints":
             results = []
             for loc in _LOCATIONS:
-                # Schema-compliant: pipe-delimited "id|name|x|y|theta" format.
-                # Matches the real adapter's locations_to_waypoints_result().
-                value = "|".join([
-                    loc["id"],
-                    loc["name"],
-                    str(loc["pose"]["x"]),
-                    str(loc["pose"]["y"]),
-                    str(loc["pose"]["theta"]),
-                ])
+                # JSON object format, matches the real adapter's
+                # locations_to_waypoints_result() in mapping.py.
+                value = json.dumps({
+                    "id": loc["id"],
+                    "name": loc["name"],
+                    "pose": {
+                        "x": loc["pose"]["x"],
+                        "y": loc["pose"]["y"],
+                        "theta": loc["pose"]["theta"],
+                    },
+                }, ensure_ascii=False)
                 results.append(
                     Result(name=loc["name"], data_type_ref="waypoint", value=value)
                 )
