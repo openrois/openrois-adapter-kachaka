@@ -17,6 +17,7 @@ Three public functions are defined:
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 from kachaka_api.generated import kachaka_api_pb2 as pb2
@@ -61,9 +62,9 @@ def locations_to_waypoints_result(
 
     This is a demo extension (not in the OMG spec). Each location is serialised
     into a :class:`Result` whose ``name`` is the location name, ``data_type_ref``
-    is ``"waypoint"``, and ``value`` is a pipe-delimited string:
+    is ``"waypoint"``, and ``value`` is a JSON string:
 
-    ``"id|name|x|y|theta"``
+    ``'{"id": "S01_home", "name": "シェルフのホーム", "pose": {"x": 3.77, "y": -1.30, "theta": 1.79}}'``
 
     This keeps the generic ``Result(value=str)`` contract while carrying the
     full waypoint information needed by the map UI.
@@ -77,14 +78,17 @@ def locations_to_waypoints_result(
     """
     results: ResultList = []
     for loc in locations:
-        value = "|".join(
-            [
-                loc.id,
-                loc.name,
-                str(loc.pose.x),
-                str(loc.pose.y),
-                str(loc.pose.theta),
-            ]
+        value = json.dumps(
+            {
+                "id": loc.id,
+                "name": loc.name,
+                "pose": {
+                    "x": loc.pose.x,
+                    "y": loc.pose.y,
+                    "theta": loc.pose.theta,
+                },
+            },
+            ensure_ascii=False,
         )
         results.append(
             Result(
