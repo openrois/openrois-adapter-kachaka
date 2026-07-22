@@ -16,9 +16,14 @@ function App() {
   const robotPosition = useRobotPosition(client);
   const status = useComponentStatus(client);
   const { target: arrivedTarget } = useReachedTarget(client);
-  const [selectedWaypoint, setSelectedWaypoint] = useState<string | null>(null);
+  const [selectedWaypointId, setSelectedWaypointId] = useState<string | null>(null);
   const [commandId, setCommandId] = useState<string | null>(null);
   const [arrivalMessage, setArrivalMessage] = useState<string | null>(null);
+
+  // Look up the selected waypoint name for display.
+  const selectedWaypointName = selectedWaypointId
+    ? waypoints.find((wp) => wp.id === selectedWaypointId)?.name ?? null
+    : null;
 
   // Clear selection and show arrival message when reached_target fires.
   // The effect synchronizes with an external event (the subscription),
@@ -26,25 +31,27 @@ function App() {
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (arrivedTarget) {
-      setSelectedWaypoint(null);
+      // The event returns the target ID. Look up the name for display.
+      const name = waypoints.find((wp) => wp.id === arrivedTarget)?.name ?? arrivedTarget;
+      setSelectedWaypointId(null);
       setCommandId(null);
-      setArrivalMessage(`Arrived at ${arrivedTarget}`);
+      setArrivalMessage(`Arrived at ${name}`);
       // Clear the arrival message after 5 seconds.
       const timer = setTimeout(() => setArrivalMessage(null), 5000);
       return () => clearTimeout(timer);
     }
-  }, [arrivedTarget]);
+  }, [arrivedTarget, waypoints]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleNavigate = async () => {
-    if (!client || !selectedWaypoint || status === "BUSY") return;
+    if (!client || !selectedWaypointId || status === "BUSY") return;
     try {
       const response = await client.execute(NAVIGATION_REF, {
         parameters: [
           {
             name: "target_positions",
             data_type_ref: "string[]",
-            value: JSON.stringify([selectedWaypoint]),
+            value: JSON.stringify([selectedWaypointId]),
           },
         ],
       });
@@ -63,18 +70,18 @@ function App() {
           <MapView
             waypoints={waypoints}
             robotPosition={robotPosition}
-            selectedWaypoint={selectedWaypoint}
-            onSelectWaypoint={setSelectedWaypoint}
+            selectedWaypointId={selectedWaypointId}
+            onSelectWaypoint={setSelectedWaypointId}
           />
         </div>
         <StatusPanel
           connected={connected}
           status={status}
-          selectedWaypoint={selectedWaypoint}
+          selectedWaypointName={selectedWaypointName}
           commandId={commandId}
           arrivalMessage={arrivalMessage}
           onNavigate={handleNavigate}
-          onClearSelection={() => setSelectedWaypoint(null)}
+          onClearSelection={() => setSelectedWaypointId(null)}
         />
       </div>
     </div>

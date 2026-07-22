@@ -5,8 +5,8 @@ import type { Waypoint } from "../hooks/useWaypoints";
 interface MapViewProps {
   waypoints: Waypoint[];
   robotPosition: { x: number; y: number; theta: number } | null;
-  selectedWaypoint: string | null;
-  onSelectWaypoint: (name: string) => void;
+  selectedWaypointId: string | null;
+  onSelectWaypoint: (id: string) => void;
 }
 
 /**
@@ -15,7 +15,7 @@ interface MapViewProps {
 export function MapView({
   waypoints,
   robotPosition,
-  selectedWaypoint,
+  selectedWaypointId,
   onSelectWaypoint,
 }: MapViewProps) {
   return (
@@ -52,11 +52,11 @@ export function MapView({
       {/* Waypoint pins */}
       {waypoints.map((wp) => {
         const [px, py] = worldToPixel(wp.pose.x, wp.pose.y);
-        const isSelected = wp.name === selectedWaypoint;
+        const isSelected = wp.id === selectedWaypointId;
         return (
           <g
             key={wp.id}
-            onClick={() => onSelectWaypoint(wp.name)}
+            onClick={() => onSelectWaypoint(wp.id)}
             style={{ cursor: "pointer" }}
           >
             <WaypointPin

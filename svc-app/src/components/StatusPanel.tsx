@@ -1,7 +1,7 @@
 interface StatusPanelProps {
   connected: boolean;
   status: string;
-  selectedWaypoint: string | null;
+  selectedWaypointName: string | null;
   commandId: string | null;
   arrivalMessage: string | null;
   onNavigate: () => void;
@@ -15,13 +15,13 @@ interface StatusPanelProps {
 export function StatusPanel({
   connected,
   status,
-  selectedWaypoint,
+  selectedWaypointName,
   commandId,
   arrivalMessage,
   onNavigate,
   onClearSelection,
 }: StatusPanelProps) {
-  const canNavigate = connected && selectedWaypoint !== null && status !== "BUSY";
+  const canNavigate = connected && selectedWaypointName !== null && status !== "BUSY";
   const statusColor =
     status === "BUSY" ? "#eab308" : status === "ERROR" ? "#ef4444" : "#22c55e";
 
@@ -52,7 +52,7 @@ export function StatusPanel({
       <div className="status-row">
         <span className="status-label">Target</span>
         <span className="status-value">
-          {selectedWaypoint ?? "None"}
+          {selectedWaypointName ?? "None"}
         </span>
       </div>
 
@@ -72,7 +72,7 @@ export function StatusPanel({
         >
           Navigate
         </button>
-        {selectedWaypoint && (
+        {selectedWaypointName && (
           <button
             type="button"
             className="clear-button"
