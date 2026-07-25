@@ -1,0 +1,13 @@
+[project]
+name = "capf-kachaka"
+version = "0.1.0"
+description = "CAPF Kachaka Sub HRI Engine: bridges RoIS JSON-RPC to Kachaka gRPC"
+requires-python = ">=3.11"
+dependencies = [
+    "websockets>=12.0",
+    "kachaka-api",
+    "openrois-interfaces",
+]
+
+[tool.setuptools]
+packages = ["capf_kachaka"]
