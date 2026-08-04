@@ -7,8 +7,8 @@ land (M1/M2), handler.py and server.py are replaced by monorepo imports.
 The adapter does not change.
 
 Usage:
-    python gateway/main.py --target 192.168.1.100:26400 --port 8765
-    python gateway/main.py --mock --port 8765
+    python gateway/main.py --target 192.168.1.100:26400 --port 31166
+    python gateway/main.py --mock --port 31166
 """
 
 from __future__ import annotations
@@ -45,8 +45,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--port",
         type=int,
-        default=8765,
-        help="WebSocket bind port (default: 8765)",
+        default=31166,
+        help="WebSocket bind port (default: 31166)",
     )
     parser.add_argument(
         "--poll-interval",

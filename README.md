@@ -33,9 +33,9 @@ pip install websockets
 pip install vendor/openrois_interfaces-0.1.0a2-py3-none-any.whl
 pip install -e bus-adapter/
 
-python gateway/main.py --target <kachaka-ip>:26400 --port 8765
+python gateway/main.py --target <kachaka-ip>:26400 --port 31166
 # or with the mock adapter (no robot needed):
-python gateway/main.py --mock --port 8765
+python gateway/main.py --mock --port 31166
 ```
 
 ### ROS 2 path (canonical, for Teleco PAO reuse)

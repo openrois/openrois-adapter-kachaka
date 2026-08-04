@@ -34,7 +34,7 @@ class WSServer:
         self,
         handler: RoISHandler,
         host: str = "0.0.0.0",
-        port: int = 8765,
+        port: int = 31166,
     ) -> None:
         self._handler = handler
         self._host = host

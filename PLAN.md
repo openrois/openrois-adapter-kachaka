@@ -295,7 +295,7 @@ when they land (M1/M2). The adapter does not change.
 |------|---------|-------------|
 | `--target` | `192.168.1.100:26400` | Kachaka gRPC target address |
 | `--host` | `0.0.0.0` | WebSocket bind host |
-| `--port` | `8765` | WebSocket bind port |
+| `--port` | `31166` | WebSocket bind port |
 | `--poll-interval` | `0.5` | Event poll interval (seconds) |
 | `--mock` | off | Use mock adapter instead of real Kachaka |
 
@@ -305,11 +305,11 @@ when they land (M1/M2). The adapter does not change.
 # With mock adapter (no robot needed)
 pip install websockets
 pip install ../vendor/openrois_interfaces-0.1.0a2-py3-none-any.whl
-python gateway/main.py --mock --port 8765
+python gateway/main.py --mock --port 31166
 
 # With real Kachaka
 pip install -e ../bus-adapter/
-python gateway/main.py --target 192.168.1.100:26400 --port 8765
+python gateway/main.py --target 192.168.1.100:26400 --port 31166
 ```
 
 ### Status
@@ -467,7 +467,7 @@ The robot marker's circle center is at `(12, 12)`. The transform `translate(x, y
 ```typescript
 // Hardcoded constants for the demo. Update if the map or gateway changes.
 
-export const GATEWAY_URL = "ws://localhost:8765";
+export const GATEWAY_URL = "ws://localhost:31166";
 
 // Map metadata from maps/unicorn/kachaka_map.yaml
 export const MAP_RESOLUTION = 0.025;
@@ -688,7 +688,7 @@ npm install
 npm run dev    # Vite dev server on http://localhost:5173
 ```
 
-The app connects to `ws://localhost:8765` (the gateway).
+The app connects to `ws://localhost:31166` (the gateway).
 
 ### Implementation steps
 
@@ -703,7 +703,7 @@ The app connects to `ws://localhost:8765` (the gateway).
 7. Rewrite `App.tsx` to wire everything together.
 8. Add styles to `App.css` for the map layout, side panel, and connection indicator.
 9. Build the SDK: `cd openrois/sdk/typescript && npm run build`.
-10. Start the gateway: `python gateway/main.py --mock --port 8765`.
+10. Start the gateway: `python gateway/main.py --mock --port 31166`.
 11. Start the svc-app: `cd svc-app && npm run dev`.
 12. Open `http://localhost:5173`, verify the map renders, waypoint pins appear,
     robot marker is visible with heading direction, clicking a pin selects it,
@@ -737,7 +737,7 @@ The app connects to `ws://localhost:8765` (the gateway).
 
 1. Start the gateway:
    ```bash
-   python gateway/main.py --target <kachaka-ip>:26400 --port 8765
+   python gateway/main.py --target <kachaka-ip>:26400 --port 31166
    ```
 
 2. Connect a WebSocket client and send these JSON-RPC requests:

@@ -422,6 +422,48 @@ class KachakaSubHriEngine:
         return command.SerializeToString().hex()
 
 
+async def run_websocket_loop(
+    engine: KachakaSubHriEngine,
+    ws_url: str,
+    reconnect_delay: float,
+) -> None:
+    """Connect to the avatar WebSocket, reconnecting on disconnect.
+
+    Retries every reconnect_delay seconds until the connection succeeds, then
+    serves requests. On disconnect, waits reconnect_delay seconds and retries.
+    Exits cleanly on cancellation (Ctrl+C).
+    """
+    while True:
+        try:
+            logger.info("Connecting to avatar at %s", ws_url)
+            async with websockets.connect(ws_url) as ws:
+                engine._ws = ws
+                logger.info("Connected to avatar HRI Engine")
+                async for raw in ws:
+                    response = await engine.handle_message(raw)
+                    if response is not None:
+                        await ws.send(response)
+                        logger.debug("Sent response: %s", response[:100])
+            logger.info(
+                "WebSocket disconnected, reconnecting in %.1fs", reconnect_delay
+            )
+        except asyncio.CancelledError:
+            logger.info("Shutting down")
+            return
+        except Exception:
+            logger.exception(
+                "WebSocket connection failed, reconnecting in %.1fs",
+                reconnect_delay,
+            )
+        finally:
+            engine._ws = None
+
+        try:
+            await asyncio.sleep(reconnect_delay)
+        except asyncio.CancelledError:
+            return
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser(
         description="CAPF Kachaka Sub HRI Engine"
@@ -434,8 +476,8 @@ async def main() -> None:
     parser.add_argument(
         "--port",
         type=int,
-        default=8765,
-        help="Avatar WebSocket server port (default: 8765)",
+        default=31166,
+        help="Avatar WebSocket server port (default: 31166)",
     )
     parser.add_argument(
         "--host",
@@ -454,6 +496,12 @@ async def main() -> None:
         choices=["debug", "info", "warning", "error"],
         help="Log level (default: info)",
     )
+    parser.add_argument(
+        "--reconnect-delay",
+        type=float,
+        default=10.0,
+        help="WebSocket reconnect delay in seconds (default: 10.0)",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -465,21 +513,19 @@ async def main() -> None:
     await engine.connect()
 
     ws_url = f"ws://{args.host}:{args.port}"
-    logger.info("Connecting to avatar at %s", ws_url)
-
-    async with websockets.connect(ws_url) as ws:
-        engine._ws = ws
-        logger.info("Connected to avatar HRI Engine")
-
-        async for raw in ws:
-            response = await engine.handle_message(raw)
-            if response is not None:
-                await ws.send(response)
-                logger.debug("Sent response: %s", response[:100])
-
-    await engine.close()
-    logger.info("Disconnected")
+    try:
+        await run_websocket_loop(
+            engine,
+            ws_url,
+            args.reconnect_delay,
+        )
+    finally:
+        await engine.close()
+        logger.info("Disconnected")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass

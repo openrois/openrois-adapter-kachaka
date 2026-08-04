@@ -5,7 +5,7 @@ application via the RoIS protocol.
 
 ## Overview
 
-The avatar app runs a WebSocket server on `localhost:8765`. This script
+The avatar app runs a WebSocket server on `localhost:31166`. This script
 connects to it as a Sub HRI Engine. When the avatar receives a RoIS
 JSON-RPC command from an operator, it forwards it to this script, which
 translates it to Kachaka gRPC calls and returns the result.
@@ -24,10 +24,10 @@ pip install websockets
 
 ```bash
 source .venv/bin/activate
-python main.py --target 192.168.100.203:26400 --port 8765
+python main.py --target 192.168.100.203:26400 --port 31166
 ```
 
-Connects to the avatar's WebSocket server on `ws://localhost:8765`
+Connects to the avatar's WebSocket server on `ws://localhost:31166`
 and the Kachaka robot at the given gRPC target.
 
 ## RoIS methods supported

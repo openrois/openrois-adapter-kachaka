@@ -49,7 +49,7 @@ pip install websockets
 pip install ../vendor/openrois_interfaces-0.1.0a2-py3-none-any.whl
 pip install -e ../bus-adapter/
 
-python main.py --target 192.168.1.100:26400 --port 8765
+python main.py --target 192.168.1.100:26400 --port 31166
 ```
 
 ### With the mock adapter (no robot needed)
@@ -58,7 +58,7 @@ python main.py --target 192.168.1.100:26400 --port 8765
 pip install websockets
 pip install ../vendor/openrois_interfaces-0.1.0a2-py3-none-any.whl
 
-python main.py --mock --port 8765
+python main.py --mock --port 31166
 ```
 
 ## JSON-RPC Methods
@@ -113,7 +113,7 @@ Connect a WebSocket client and send these JSON-RPC requests:
 |------|---------|-------------|
 | `--target` | `192.168.1.100:26400` | Kachaka gRPC target address |
 | `--host` | `0.0.0.0` | WebSocket bind host |
-| `--port` | `8765` | WebSocket bind port |
+| `--port` | `31166` | WebSocket bind port |
 | `--poll-interval` | `0.5` | Event poll interval (seconds) |
 | `--mock` | off | Use mock adapter instead of real Kachaka |
 

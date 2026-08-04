@@ -4,7 +4,7 @@
  */
 
 /** Gateway WebSocket URL. */
-export const GATEWAY_URL = "ws://localhost:8765";
+export const GATEWAY_URL = "ws://localhost:31166";
 
 /** Map metadata from maps/unicorn/kachaka_map.yaml. */
 export const MAP_RESOLUTION = 0.025;
