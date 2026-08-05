@@ -1,0 +1,2 @@
+openrois-adapter-sdk>=0.1.0a1
+kachaka-api>=0.0.10
