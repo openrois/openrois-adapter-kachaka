@@ -40,18 +40,16 @@ class KachakaAdapter(RobotAdapter):
 
     def __init__(self, config: dict) -> None:
         robot_config = config.get("robot", {})
-        self._grpc_target = robot_config.get(
-            "grpc_target", "192.168.100.203:26400",
+        self._grpc_server = robot_config.get(
+            "grpc_server", "192.168.1.100:26400",
         )
         self._auto_homing = robot_config.get("auto_homing", False)
         self._poll_interval = robot_config.get("poll_interval_sec", 0.5)
 
-        # Kachaka gRPC client (imported lazily so the SDK works without it).
-        from kachaka_api.aio import KachakaApiClient
-        from kachaka_api.generated import kachaka_api_pb2 as pb2
-
-        self._client = KachakaApiClient(target=self._grpc_target)
-        self._pb2 = pb2
+        # Defer gRPC client creation to connect() so it binds to the
+        # framework's event loop, not a default loop from __init__.
+        self._client = None
+        self._pb2 = None
         self._connected = False
         self._nav_busy = False
         self._locations_cache: list | None = None
@@ -59,11 +57,20 @@ class KachakaAdapter(RobotAdapter):
         super().__init__(config)
 
     async def connect(self) -> None:
-        """Connect to Kachaka and initialize the resolver."""
+        """Connect to Kachaka and initialize the resolver.
+
+        Creates the gRPC client here (not in __init__) so it binds
+        to the framework's event loop.
+        """
+        from kachaka_api.aio import KachakaApiClient
+        from kachaka_api.generated import kachaka_api_pb2 as pb2
+
+        self._client = KachakaApiClient(target=self._grpc_server)
+        self._pb2 = pb2
         await self._client.update_resolver()
         await self._client.set_auto_homing_enabled(self._auto_homing)
         self._connected = True
-        logger.info("Connected to Kachaka at %s", self._grpc_target)
+        logger.info("Connected to Kachaka at %s", self._grpc_server)
 
     # ─── SystemInformation ─────────────────────────────────────
 
@@ -173,7 +180,11 @@ class KachakaAdapter(RobotAdapter):
 
 
 def main() -> None:
-    """Entry point: load config, connect, run framework."""
+    """Entry point: load config, run framework.
+
+    The framework calls adapter.connect() inside its own event loop
+    so that the gRPC channel binds to the same loop as the WebSocket.
+    """
     logging.basicConfig(level=logging.INFO)
 
     parser = argparse.ArgumentParser(description="Kachaka OpenRoIS adapter")
@@ -186,10 +197,6 @@ def main() -> None:
 
     config = load_config(args.config)
     adapter = KachakaAdapter(config)
-
-    # Connect to Kachaka before starting the framework.
-    loop = asyncio.new_event_loop()
-    loop.run_until_complete(adapter.connect())
 
     framework = AdapterFramework(adapter, config)
     framework.run()

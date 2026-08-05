@@ -1,6 +1,6 @@
 # Kachaka adapter profile.
 #
-# Copy to profile.yaml and edit the grpc_target to match your robot.
+# Copy to profile.yaml and edit the grpc_server to match your robot.
 
 fleet_id: kachaka
 
@@ -10,7 +10,7 @@ connection:
     port: 8765
 
 robot:
-  grpc_target: "192.168.100.203:26400"
+  grpc_server: "192.168.1.100:26400"
   auto_homing: false
   poll_interval_sec: 0.5
 

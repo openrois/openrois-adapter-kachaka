@@ -19,7 +19,7 @@ connection:
     host: "127.0.0.1"
     port: 8765
 robot:
-  grpc_target: "192.168.100.203:26400"
+  grpc_server: "192.168.100.203:26400"
   auto_homing: false
   poll_interval_sec: 0.5
 ```

@@ -49,7 +49,7 @@ def _jpeg_dimensions(data: bytes) -> tuple[int, int] | None:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TARGET = "192.168.100.203:26400"
+DEFAULT_TARGET = "192.168.1.100:26400"
 DEFAULT_DEVICE = "/dev/video11"
 DEFAULT_FPS = 10.0
 
