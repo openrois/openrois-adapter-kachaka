@@ -1,0 +1,5 @@
+openrois-adapter-sdk
+websockets
+pyyaml
+# rclpy is installed via ROS 2, not pip
+# kachaka_interfaces is installed via colcon, not pip

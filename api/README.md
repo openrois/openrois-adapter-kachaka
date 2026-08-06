@@ -10,7 +10,7 @@ pip install openrois-adapter-sdk kachaka-api
 
 ## Config
 
-Copy `profile.yaml.example` to `profile.yaml` and edit the gRPC target:
+Copy `openrois-profile.yaml.example` to `openrois-profile.yaml` and edit the gRPC target:
 
 ```yaml
 fleet_id: kachaka
@@ -27,7 +27,7 @@ robot:
 ## Run
 
 ```bash
-python kachaka_adapter.py --config profile.yaml
+python kachaka_api_adapter.py --config openrois-profile.yaml
 ```
 
 ## Components
