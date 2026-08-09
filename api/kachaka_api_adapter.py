@@ -147,7 +147,7 @@ class KachakaApiAdapter(RobotAdapter):
                 return results.status("BUSY")
             return results.status("READY")
 
-        @invoke("EXECUTE")
+        @invoke("execute")
         async def navigate(self, parameters):
             if self.parent._nav_busy:
                 return InvokeResponse(
@@ -193,7 +193,7 @@ class KachakaApiAdapter(RobotAdapter):
             loop.create_task(self._poll_reached())
             return InvokeResponse(return_code=ReturnCode.OK, command_id="cmd-nav")
 
-        @invoke("STOP")
+        @invoke("stop")
         async def stop(self, parameters):
             await self.parent._client.cancel_command()
             self.parent._nav_busy = False

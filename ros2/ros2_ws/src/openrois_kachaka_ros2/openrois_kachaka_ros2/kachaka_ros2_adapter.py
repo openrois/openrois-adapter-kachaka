@@ -153,7 +153,7 @@ class KachakaRos2Adapter(RobotAdapter):
                 return results.status("BUSY")
             return results.status("READY")
 
-        @invoke("EXECUTE")
+        @invoke("execute")
         async def navigate(self, parameters):
             if self.parent.node.is_command_running():
                 return InvokeResponse(
@@ -185,7 +185,7 @@ class KachakaRos2Adapter(RobotAdapter):
                 return_code=ReturnCode.OK, command_id="cmd-nav",
             )
 
-        @invoke("STOP")
+        @invoke("stop")
         async def stop(self, parameters):
             self.parent.node.cancel_command()
             self.parent._nav_busy = False
