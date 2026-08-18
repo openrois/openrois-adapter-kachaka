@@ -29,7 +29,7 @@ Shared state (latest pose, locations, command state) is protected by
 
 ## Install
 
-### Prerequisites
+### Requirements
 
 1. ROS 2 (Jazzy or Humble) installed.
 2. `kachaka_interfaces` and `kachaka_grpc_ros2_bridge` built from

@@ -38,7 +38,7 @@ Both paths reach the same robot. The API path uses the vendor Python library
 directly. The ROS 2 path goes through a ROS 2 bridge that translates gRPC to
 topics and actions.
 
-## Prerequisites
+## Requirements
 
 - Python 3.12+
 - For the ROS 2 path: ROS 2 Jazzy Jalisco
