@@ -3,43 +3,22 @@
 # Copy to openrois-profile.yaml and edit the topics to match your
 # kachaka_grpc_ros2_bridge configuration.
 
-fleet_id: kachaka
+engine:
+  id: kachaka
+  platform: kachaka
+  server_url: "ws://127.0.0.1:8765"
 
-connection:
-  ws:
-    host: "127.0.0.1"
-    port: 8765
-
-ros2:
-  node_name: "openrois_kachaka_ros2"
-  # Topic and action names (defaults match kachaka_grpc_ros2_bridge).
-  # The bridge uses ~ namespace, so topics are prefixed with the node name.
+environment:
+  ros2_node_name: "openrois_kachaka_ros2"
   robot_pose_topic: "/odometry/odometry"
   locations_topic: "/layout/locations/list"
   command_action: "/kachaka_command/execute"
 
-map:
-  map_name: "kachaka_map"
-  resolution: 0.025
-  origin_x: -2.1557
-  origin_y: -7.83943
-  width: 447
-  height: 514
-
 components:
-  - ref: "SystemInformation"
-    type: standard
-    bind_required: false
-    queries: [robot_position, engine_status]
-
-  - ref: "Navigation"
-    type: standard
-    bind_required: true
-    commands: [start, stop, suspend, resume, set_parameter, execute]
-    queries: [component_status, get_parameter]
-    events: [reached_target]
-
-  - ref: "MapObserver"
-    type: custom
-    bind_required: false
-    queries: [waypoints, map_info, component_status]
+  MapObserver:
+    map_name: "kachaka_map"
+    map_resolution: 0.025
+    map_origin_x: -2.1557
+    map_origin_y: -7.83943
+    map_width: 447
+    map_height: 514

@@ -13,7 +13,7 @@ pip install openrois-adapter-sdk kachaka-api
 Copy `openrois-profile.yaml.example` to `openrois-profile.yaml` and edit the gRPC target:
 
 ```yaml
-fleet_id: kachaka
+engine_id: kachaka
 connection:
   ws:
     host: "127.0.0.1"

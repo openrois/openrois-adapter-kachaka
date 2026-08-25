@@ -58,7 +58,7 @@ Copy `openrois-profile.yaml.example` to `openrois-profile.yaml` and edit the top
 to match your `kachaka_grpc_ros2_bridge` configuration:
 
 ```yaml
-fleet_id: kachaka
+engine_id: kachaka
 
 connection:
   ws:
