@@ -5,20 +5,15 @@
 engine:
   id: kachaka_01
   platform: kachaka
-  server_url: "ws://127.0.0.1:8765"
+  gateway_url: "ws://127.0.0.1:8765"
 
 environment:
   grpc_server: "192.168.1.100:26400"
   auto_homing: false
-  poll_interval_sec: 0.5
 
 components:
   Navigation:
     poll_interval: 0.5
-  MapObserver:
-    map_name: "org-kachaka@location"
-    map_resolution: 0.025
-    map_origin_x: -2.1557
-    map_origin_y: -7.83943
-    map_width: 447
-    map_height: 514
+  SystemInformation: {}
+  NavigationInformation:
+    map_name: "coarobo-kachaka_01@unicorn"

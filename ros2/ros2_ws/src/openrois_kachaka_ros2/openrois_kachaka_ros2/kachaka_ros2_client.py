@@ -18,6 +18,7 @@ import rclpy
 from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -33,18 +34,18 @@ class KachakaRos2Client(Node):
     """
 
     def __init__(self, config: dict) -> None:
-        ros2_config = config.get("ros2", {})
-        node_name = ros2_config.get("node_name", "openrois_kachaka_ros2")
+        env = config.get("environment", {})
+        node_name = env.get("ros2_node_name", "openrois_kachaka_ros2")
         super().__init__(node_name)
 
-        pose_topic = ros2_config.get(
-            "robot_pose_topic", "/odometry/odometry",
+        pose_topic = env.get(
+            "robot_pose_topic", "/kachaka/odometry/odometry",
         )
-        locations_topic = ros2_config.get(
-            "locations_topic", "/layout/locations/list",
+        locations_topic = env.get(
+            "locations_topic", "/kachaka/layout/locations/list",
         )
-        command_action = ros2_config.get(
-            "command_action", "/kachaka_command/execute",
+        command_action = env.get(
+            "command_action", "/kachaka/kachaka_command/execute",
         )
 
         self._lock = threading.Lock()
@@ -57,30 +58,44 @@ class KachakaRos2Client(Node):
         cb_group = ReentrantCallbackGroup()
 
         # Subscribe to odometry for robot position.
-        # The kachaka_grpc_ros2_bridge publishes nav_msgs/Odometry on ~/odometry.
+        # The kachaka_grpc_ros2_bridge publishes nav_msgs/Odometry with
+        # SensorDataQoS (BEST_EFFORT reliability, VOLATILE durability).
+        # Match it or no messages will be received.
         from nav_msgs.msg import Odometry
 
+        sensor_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            depth=5,
+        )
         self.create_subscription(
             Odometry,
             pose_topic,
             self._on_odometry,
-            10,
+            sensor_qos,
             callback_group=cb_group,
         )
-        logger.info("Subscribed to %s", pose_topic)
+        logger.info("Subscribed to %s (BEST_EFFORT)", pose_topic)
 
         # Subscribe to location list.
-        # The kachaka_grpc_ros2_bridge publishes kachaka_interfaces/LocationList.
+        # The kachaka_grpc_ros2_bridge publishes kachaka_interfaces/LocationList
+        # with QoS KeepLast(1) + transient_local (RELIABLE, TRANSIENT_LOCAL).
+        # Match it so the last published list is received on startup.
         from kachaka_interfaces.msg import LocationList
 
+        latched_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            depth=1,
+        )
         self.create_subscription(
             LocationList,
             locations_topic,
             self._on_locations,
-            10,
+            latched_qos,
             callback_group=cb_group,
         )
-        logger.info("Subscribed to %s", locations_topic)
+        logger.info("Subscribed to %s (TRANSIENT_LOCAL)", locations_topic)
 
         # Action client for ExecKachakaCommand.
         from kachaka_interfaces.action import ExecKachakaCommand

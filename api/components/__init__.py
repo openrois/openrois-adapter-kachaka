@@ -1,7 +1,5 @@
 """Kachaka API adapter components."""
 
-from .system_information import SystemInformation
-from .navigation import Navigation
-from .map_observer import MapObserver
+from .navigation_information import NavigationInformation
 
-__all__ = ["SystemInformation", "Navigation", "MapObserver"]
+__all__ = ["NavigationInformation"]

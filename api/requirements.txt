@@ -1,2 +1,4 @@
-openrois-adapter-sdk>=0.1.0a1
+openrois-core>=0.1.0a2
+openrois-components-core>=0.1.0a2
+openrois-components-kachaka>=0.1.0
 kachaka-api>=0.0.10

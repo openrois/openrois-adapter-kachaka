@@ -1,8 +1,12 @@
 """OpenRoIS adapter for the Kachaka robot using ROS 2.
 
-Component handlers are in the components/ package, one file per
-component. The rclpy node is spun in a background thread by the
-AdapterFramework.
+The Navigation and SystemInformation components are imported from
+openrois_components.kachaka. NavigationInformation is a local
+non-canonical component. Each component owns its own rclpy Node,
+created in connect() and torn down in disconnect(). The adapter
+registers components with the Engine and connects to the gateway
+via WsClient. The WsClient spins all component nodes in a
+background thread.
 
 Usage:
     python kachaka_ros2_adapter.py --config openrois-profile.yaml
@@ -13,54 +17,13 @@ from __future__ import annotations
 import argparse
 import logging
 
-import rclpy
+from openrois_core import Engine, WsClient, component_config, read_profile
+from openrois_components_core import meta_from_decorators
 
-from openrois.sdk import AdapterFramework, RobotAdapter, load_config
-
-from .components import MapObserver, Navigation, SystemInformation
-from .kachaka_ros2_client import KachakaRos2Client
+from openrois_components.kachaka import Ros2Navigation, Ros2SystemInformation
+from .components import NavigationInformation
 
 logger = logging.getLogger(__name__)
-
-
-class KachakaRos2Adapter(RobotAdapter):
-    """Adapter for the Kachaka robot via ROS 2."""
-
-    SystemInformation = SystemInformation
-    Navigation = Navigation
-    MapObserver = MapObserver
-
-    def __init__(self, config: dict) -> None:
-        if not rclpy.ok():
-            rclpy.init()
-
-        self.node = KachakaRos2Client(config)
-
-        map_config = config.get("components", {}).get("MapObserver", {})
-        self._map_name = map_config.get("map_name", "")
-        self._map_resolution = float(map_config.get("map_resolution", 0.0))
-        self._map_origin_x = float(map_config.get("map_origin_x", 0.0))
-        self._map_origin_y = float(map_config.get("map_origin_y", 0.0))
-        self._map_width = int(map_config.get("map_width", 0))
-        self._map_height = int(map_config.get("map_height", 0))
-
-        self._nav_busy = False
-        self._nav_target = ""
-
-        super().__init__(config)
-
-    async def connect(self) -> None:
-        if not self.node._action_client.wait_for_server(timeout_sec=5.0):
-            logger.warning(
-                "Action server not available after 5s, "
-                "commands will fail until the bridge is ready",
-            )
-        logger.info("ROS 2 adapter connected")
-
-    async def disconnect(self) -> None:
-        self.node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
 
 
 def main() -> None:
@@ -74,12 +37,34 @@ def main() -> None:
         default="openrois-profile.yaml",
         help="Path to the profile YAML file",
     )
-    args = parser.parse_args()
+    # Use parse_known_args so --ros-args (consumed by rclpy.init)
+    # does not cause argparse to error when launched via ros2 run.
+    args, _ = parser.parse_known_args()
 
-    config = load_config(args.config)
-    adapter = KachakaRos2Adapter(config)
-    framework = AdapterFramework(adapter, config)
-    framework.run()
+    profile = read_profile(args.config)
+
+    engine = Engine(
+        engine_id=profile["engine"]["id"],
+        platform=profile["engine"].get("platform", ""),
+    )
+    engine.register_component(
+        "Navigation",
+        Ros2Navigation(component_config(profile, "Navigation")),
+        meta_from_decorators(Ros2Navigation),
+    )
+    engine.register_component(
+        "SystemInformation",
+        Ros2SystemInformation(component_config(profile, "SystemInformation")),
+        meta_from_decorators(Ros2SystemInformation),
+    )
+    engine.register_component(
+        "NavigationInformation",
+        NavigationInformation(component_config(profile, "NavigationInformation")),
+        meta_from_decorators(NavigationInformation),
+    )
+
+    ws_client = WsClient(engine, profile["engine"]["gateway_url"])
+    ws_client.run()
 
 
 if __name__ == "__main__":

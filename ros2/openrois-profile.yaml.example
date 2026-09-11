@@ -2,23 +2,24 @@
 #
 # Copy to openrois-profile.yaml and edit the topics to match your
 # kachaka_grpc_ros2_bridge configuration.
+#
+# Topic names include the /kachaka/ namespace used by the
+# kachaka_grpc_ros2_bridge (default namespace: "kachaka").
+# If you start the bridge with a custom namespace, update these.
 
 engine:
   id: kachaka
   platform: kachaka
-  server_url: "ws://127.0.0.1:8765"
+  gateway_url: "ws://127.0.0.1:8765"
 
 environment:
   ros2_node_name: "openrois_kachaka_ros2"
-  robot_pose_topic: "/odometry/odometry"
-  locations_topic: "/layout/locations/list"
-  command_action: "/kachaka_command/execute"
+  robot_pose_topic: "/kachaka/odometry/odometry"
+  locations_topic: "/kachaka/layout/locations/list"
+  command_action: "/kachaka/kachaka_command/execute"
 
 components:
-  MapObserver:
-    map_name: "kachaka_map"
-    map_resolution: 0.025
-    map_origin_x: -2.1557
-    map_origin_y: -7.83943
-    map_width: 447
-    map_height: 514
+  Navigation:
+    poll_interval: 0.5
+  NavigationInformation:
+    map_name: "coarobo-kachaka_01@unicorn"
