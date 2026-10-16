@@ -7,7 +7,7 @@ and a ROS 2 adapter using the `kachaka_grpc_ros2_bridge`.
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![ROS](https://img.shields.io/badge/ROS_2-Jazzy-22314E?logo=ros&logoColor=white)
 
-## Repository structure
+## 📁 Repository structure
 
 ```
 openrois-adapter-kachaka/
@@ -27,7 +27,7 @@ openrois-adapter-kachaka/
 └── utils/
 ```
 
-## Integration paths
+## 🔌 Integration paths
 
 | Path | Directory | Package | Executable | Connects to |
 |---|---|---|---|---|
@@ -38,7 +38,7 @@ Both paths reach the same robot. The API path uses the vendor Python library
 directly. The ROS 2 path goes through a ROS 2 bridge that translates gRPC to
 topics and actions.
 
-## Requirements
+## 💻 Requirements
 
 - Python 3.12+
 - The OpenRoIS packages from a clone of
@@ -54,7 +54,7 @@ Each path is a thin adapter process: it hosts the Kachaka components of
 `components/` in an engine, reads its settings from
 `adapter.yaml`, and dials an OpenRoIS gateway on `/adapter`.
 
-## Quick start
+## 🚀 Quick start
 
 ### API path (gRPC direct)
 
@@ -135,7 +135,7 @@ namespace, update the topic names in `adapter.yaml`.
 
 See `api/README.md` and `ros2/README.md` for detailed instructions.
 
-## Components
+## 🧩 Components
 
 | Component | Type | Serves |
 |---|---|---|
@@ -145,7 +145,7 @@ See `api/README.md` and `ros2/README.md` for detailed instructions.
 
 The engine answers `component_status` for every component.
 
-## License
+## ⚖️ License
 
 ```
 Copyright 2026 Coarobo GK. All rights reserved.
@@ -153,7 +153,7 @@ Copyright 2026 Coarobo GK. All rights reserved.
 No License.
 ```
 
-## Project status
+## 🚦 Project status
 
 > [!WARNING]
 > This project is in alpha stage and is not production-ready. APIs, behavior, and structure may change without notice.
