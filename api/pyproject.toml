@@ -1,0 +1,6 @@
+# Test settings only: the adapter is a script, not a package.
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

@@ -1,5 +1,4 @@
-websockets
-pyyaml
-# rclpy is installed via ROS 2, not pip
-# kachaka_interfaces is installed via colcon, not pip
-# openrois packages are installed from vendored wheels, see README
+# rclpy is installed with ROS 2, not pip.
+# kachaka_interfaces is built with colcon, not pip.
+# The OpenRoIS packages are not on PyPI yet. Install them from a clone of
+# openrois/openrois, see README.md.

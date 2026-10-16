@@ -1,68 +1,78 @@
 # openrois-adapter-kachaka (API)
 
-OpenRoIS adapter for the Kachaka robot using the gRPC API. Connects
-directly to the Kachaka gRPC server. No ROS 2 required.
+OpenRoIS adapter for the Kachaka robot over its gRPC API. No ROS 2 needed.
+
+The adapter is a thin process. It hosts three components of
+`openrois-components-kachaka` in an engine and connects the engine to an
+OpenRoIS gateway, which it dials on `/adapter`:
+
+| Component | Type | Serves |
+|---|---|---|
+| `Navigation` | `GrpcNavigation`, RoIS Navigation | `start`, `stop`, `suspend`, `resume`, `reached_target`, the Navigation parameters |
+| `SystemInformation` | `GrpcSystemInformation`, RoIS SystemInformation | `robot_position`, `engine_status` |
+| `NavigationInformation` | `GrpcNavigationInformation`, Coarobo NavigationInformation | `destinations`, `destination_positions`, `map_info` |
+
+The engine answers `component_status` for every component and assigns
+the command ids. Each component keeps its own client of the gRPC API.
 
 ## Install
 
-```bash
-pip install openrois-core openrois-components-kachaka kachaka-api
-```
-
-The `kachaka-api` package is vendored in `kachaka-api/python/`. Install
-from there if not on PyPI:
+Python 3.12 or later. The OpenRoIS packages are not on PyPI yet, so
+install them from a clone of
+[openrois/openrois](https://github.com/openrois/openrois):
 
 ```bash
-cd kachaka-api/python
-pip install -e .
+OPENROIS=/path/to/openrois     # the clone
+pip install -e $OPENROIS/interfaces/python -e $OPENROIS/engine \
+    -e $OPENROIS/components/core
+pip install -e "../components[grpc]"    # this repository's Kachaka components
+pip install -e ../kachaka-api/python   # kachaka-api, if it is not on PyPI
 ```
 
-## Config
+## Configure
 
-Copy `openrois-profile.yaml.example` to `openrois-profile.yaml` and edit
-the gRPC target and engine URL:
+Copy `adapter.yaml.example` to `adapter.yaml` and set `robot_address`
+to the Kachaka's gRPC API:
 
 ```yaml
-engine:
-  id: kachaka_01
-  platform: kachaka
-  gateway_url: "ws://127.0.0.1:8765"
+gateway_url: ws://127.0.0.1:8765
+engine_id: kachaka_01
+robot_address: 192.168.1.100:26400
+log_level: info
 
-environment:
-  grpc_server: "192.168.100.203:26400"
+navigation:
   auto_homing: false
 
-components:
-  Navigation:
-    poll_interval: 0.5
-  NavigationInformation: {}
+navigation_information:
+  map_name: coarobo-kachaka_01@unicorn
 ```
 
-Required profile fields:
+Each setting comes from the defaults, then `adapter.yaml`, then the
+environment, then the flags. The four settings at the top also come
+from `OPENROIS_ADAPTER_GATEWAY_URL`, `OPENROIS_ADAPTER_ENGINE_ID`,
+`OPENROIS_ADAPTER_ROBOT_ADDRESS` and `OPENROIS_ADAPTER_LOG_LEVEL`, or
+from `--gateway-url`, `--engine-id`, `--robot-address` and
+`--log-level`. The sections come only from the file. A setting the
+components do not have, such as the old `poll_interval`, is refused.
 
-| Field | Description | Example |
-|---|---|---|
-| `engine.id` | Engine identifier | `kachaka_01` |
-| `engine.gateway_url` | Engine WebSocket URL | `ws://127.0.0.1:8765` |
-| `environment.grpc_server` | Kachaka gRPC target | `192.168.100.203:26400` |
-| `environment.auto_homing` | Enable auto homing on connect | `false` |
+`openrois-profile.yaml` is no longer read. Its `engine.id`,
+`engine.gateway_url` and `environment.grpc_server` become `engine_id`,
+`gateway_url` and `robot_address`, `environment.auto_homing` becomes
+`navigation.auto_homing`, and `components.NavigationInformation.map_name`
+becomes `navigation_information.map_name`.
 
-## Run
+## Start
 
 ```bash
 cd api
-python kachaka_api_adapter.py --config openrois-profile.yaml
+python kachaka_api_adapter.py --config adapter.yaml
 ```
 
-## Components
+The adapter runs until Ctrl+C and reconnects when the gateway goes away.
 
-| Component | Function | Queries | Commands | Events |
-|---|---|---|---|---|
-| SystemInformation | - | robot_position, component_status | | |
-| Navigation | actuation | get_parameter, component_status | execute, stop, set_parameter | reached_target |
-| NavigationInformation | - | locations, location_details, component_status | | |
+## Test
 
-Robot position is polled from `get_robot_pose()`. Locations are polled
-from `get_location_list()`. Navigation commands are sent via
-`move_to_location()`. The `reached_target` event fires when
-`get_command_state()` reports completion (polled at `poll_interval`).
+```bash
+pip install pytest pytest-asyncio
+cd api && pytest
+```

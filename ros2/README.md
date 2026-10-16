@@ -26,10 +26,12 @@ The `kachaka_grpc_ros2_bridge` launches all nodes under a namespace
 (default: `kachaka`). Topic names include this prefix. If you start the
 bridge with a custom namespace, update the topic names in the profile.
 
-The adapter SDK framework spins the rclpy node in a background thread.
-The adapter's `@query` and `@invoke` handlers run in the asyncio main loop.
-Shared state (latest pose, locations, command state) is protected by
-`threading.Lock`. Event emission via `self.emit()` is thread-safe.
+The adapter is a thin process. It hosts three ROS 2 components of
+`openrois-components-kachaka` in an engine and connects the engine to an
+OpenRoIS gateway, which it dials on `/adapter`. The components share one
+`RclpyExecutor`, which initializes rclpy and spins their three nodes
+(`openrois_kachaka_nav`, `openrois_kachaka_sysinfo` and
+`openrois_kachaka_navinfo`) in a background thread.
 
 ## Install
 
@@ -43,10 +45,14 @@ Shared state (latest pose, locations, command state) is protected by
    colcon build --packages-select kachaka_interfaces kachaka_grpc_ros2_bridge
    source install/setup.bash
    ```
-3. OpenRoIS interfaces, adapter SDK, and Kachaka components installed
-   from the vendored wheels:
+3. The OpenRoIS packages, installed from a clone of
+   [openrois/openrois](https://github.com/openrois/openrois) into the
+   Python that runs ROS 2, since they are not on PyPI yet:
    ```bash
-   pip install vendor/openrois_interfaces-*.whl vendor/openrois_core-*.whl vendor/openrois_components_core-*.whl vendor/openrois_components_kachaka-*.whl
+   OPENROIS=/path/to/openrois     # the clone
+   pip install -e $OPENROIS/interfaces/python -e $OPENROIS/engine \
+       -e $OPENROIS/components/core
+   pip install -e components             # this repository's Kachaka components
    ```
 
 ### Build the adapter
@@ -57,59 +63,79 @@ colcon build --packages-select openrois_kachaka_ros2
 source install/setup.bash
 ```
 
-## Config
+## Configure
 
-Copy `openrois-profile.yaml.example` to `openrois-profile.yaml` and edit the topic names
-to match your `kachaka_grpc_ros2_bridge` configuration:
+Copy `adapter.yaml.example` to `adapter.yaml`. Its defaults match the
+bridge in the `kachaka` namespace:
 
 ```yaml
-engine:
-  id: kachaka
-  platform: kachaka
-  gateway_url: "ws://127.0.0.1:8765"
+gateway_url: ws://127.0.0.1:8765
+engine_id: kachaka
+log_level: info
 
-environment:
-  ros2_node_name: "openrois_kachaka_ros2"
-  robot_pose_topic: "/kachaka/odometry/odometry"
-  locations_topic: "/kachaka/layout/locations/list"
-  command_action: "/kachaka/kachaka_command/execute"
+navigation:
+  node_name: openrois_kachaka
+  locations_topic: /kachaka/layout/locations/list
+  command_action: /kachaka/kachaka_command/execute
+  goal_timeout: 10.0
 
-components:
-  Navigation:
-    poll_interval: 0.5
-  NavigationInformation: {}
+system_information:
+  node_name: openrois_kachaka
+  pose_topic: /kachaka/odometry/odometry
+
+navigation_information:
+  node_name: openrois_kachaka
+  locations_topic: /kachaka/layout/locations/list
+  map_topic: /kachaka/mapping/map
+  map_name: coarobo-kachaka_01@unicorn
 ```
 
-The default namespace is `kachaka`. If you start the bridge with a custom
-namespace (e.g. `./start_bridge.sh <IP> myrobot`), prefix all topics with
+If you start the bridge with a custom namespace (e.g.
+`./start_bridge.sh <IP> myrobot`), prefix the topics and the action with
 `/myrobot/` instead.
 
-## Run
+Each setting comes from the defaults, then `adapter.yaml`, then the
+environment, then the flags. `gateway_url`, `engine_id` and `log_level`
+also come from `OPENROIS_ADAPTER_GATEWAY_URL`,
+`OPENROIS_ADAPTER_ENGINE_ID` and `OPENROIS_ADAPTER_LOG_LEVEL`, or from
+`--gateway-url`, `--engine-id` and `--log-level`. The sections come only
+from the file. `openrois-profile.yaml` is no longer read: its
+`environment` topics move into the sections above, `robot_pose_topic`
+becoming `system_information.pose_topic`, and `poll_interval` is gone.
+
+## Start
 
 Start the `kachaka_grpc_ros2_bridge` on the robot, then:
 
 ```bash
 source ros2/ros2_ws/install/setup.bash
-ros2 run openrois_kachaka_ros2 kachaka_adapter --config openrois-profile.yaml
+ros2 run openrois_kachaka_ros2 kachaka_adapter --config adapter.yaml
 ```
 
-Or run directly:
-
-```bash
-python ros2/ros2_ws/src/openrois_kachaka_ros2/openrois_kachaka_ros2/kachaka_ros2_adapter.py --config ros2/openrois-profile.yaml
-```
+Arguments after `--ros-args` are left to ROS 2. The adapter runs until
+Ctrl+C and reconnects when the gateway goes away.
 
 ## Components
 
-| Component | Function | Queries | Commands | Events |
-|---|---|---|---|---|
-| SystemInformation | - | robot_position, component_status | | |
-| Navigation | actuation | get_parameter, component_status | execute, stop, set_parameter | reached_target |
-| NavigationInformation | - | locations, location_details, component_status | | |
+| Component | Type | Serves |
+|---|---|---|
+| `Navigation` | `Ros2Navigation`, RoIS Navigation | `start`, `stop`, `suspend`, `resume`, `reached_target`, the Navigation parameters |
+| `SystemInformation` | `Ros2SystemInformation`, RoIS SystemInformation | `robot_position`, `engine_status` |
+| `NavigationInformation` | `Ros2NavigationInformation`, Coarobo NavigationInformation | `destinations`, `destination_positions`, `map_info` |
 
-Robot position is read from the `/kachaka/odometry/odometry` topic
-(nav_msgs/Odometry). Locations are read from the
-`/kachaka/layout/locations/list` topic (kachaka_interfaces/LocationList).
-Navigation commands are sent via the `/kachaka/kachaka_command/execute`
-action (kachaka_interfaces/ExecKachakaCommand). The `reached_target` event
-fires when the action completes (no polling).
+The engine answers `component_status` for every component and assigns
+the command ids. Robot position is read from the odometry topic
+(nav_msgs/Odometry), the destinations from the location list topic
+(kachaka_interfaces/LocationList) and the map geometry from the map
+topic (nav_msgs/OccupancyGrid). `start` sends a goal to the
+ExecKachakaCommand action and completes when the action ends, emitting
+`reached_target`; `stop` cancels the goal.
+
+## Test
+
+Without ROS 2, against the installed OpenRoIS packages:
+
+```bash
+pip install pytest pytest-asyncio
+cd ros2/ros2_ws/src/openrois_kachaka_ros2 && pytest
+```

@@ -1,0 +1,26 @@
+# Settings of the Kachaka ROS 2 adapter. Copy to adapter.yaml.
+# OPENROIS_ADAPTER_* environment variables and flags override the four common settings
+# at the top. The sections below them belong to the components.
+#
+# The topics and the action carry the namespace of the kachaka_grpc_ros2_bridge,
+# kachaka by default. If you start the bridge with another namespace, change them.
+
+gateway_url: ws://127.0.0.1:8765
+engine_id: kachaka
+log_level: info
+
+navigation:
+  node_name: openrois_kachaka                  # the node is openrois_kachaka_nav
+  locations_topic: /kachaka/layout/locations/list
+  command_action: /kachaka/kachaka_command/execute
+  goal_timeout: 10.0                           # seconds to wait for the goal's answer
+
+system_information:
+  node_name: openrois_kachaka                  # the node is openrois_kachaka_sysinfo
+  pose_topic: /kachaka/odometry/odometry
+
+navigation_information:
+  node_name: openrois_kachaka                  # the node is openrois_kachaka_navinfo
+  locations_topic: /kachaka/layout/locations/list
+  map_topic: /kachaka/mapping/map
+  map_name: coarobo-kachaka_01@unicorn         # the map image the operator app shows

@@ -220,6 +220,8 @@ __marimo__/
 .streamlit/secrets.toml
 
 # OpenRoIS
-# Ignore all profiles. The .example files are tracked.
+# Ignore the settings files, and the profiles of the old adapters. The .example files
+# are tracked.
+adapter.yaml
 openrois-profile.yaml
 openrois-profile-*.yaml

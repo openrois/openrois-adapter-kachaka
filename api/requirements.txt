@@ -1,4 +1,3 @@
-openrois-core>=0.1.0a2
-openrois-components-core>=0.1.0a2
-openrois-components-kachaka>=0.1.0
+# The OpenRoIS packages are not on PyPI yet. Install them from a clone of
+# openrois/openrois, see README.md.
 kachaka-api>=0.0.10

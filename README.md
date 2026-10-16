@@ -13,16 +13,16 @@ and a ROS 2 adapter using the `kachaka_grpc_ros2_bridge`.
 openrois-adapter-kachaka/
 ├── api/                 # direct adapter using the kachaka-api Python library
 │   ├── kachaka_api_adapter.py
-│   ├── openrois-profile.yaml.example
+│   ├── adapter.yaml.example
 │   └── README.md
 ├── ros2/                # ROS 2 adapter using the kachaka_grpc_ros2_bridge
 │   ├── ros2_ws/
 │   │   └── src/openrois_kachaka_ros2/
 │   │       └── openrois_kachaka_ros2/
-│   │           ├── kachaka_ros2_adapter.py    # KachakaRos2Adapter
-│   │           └── kachaka_ros2_client.py     # KachakaRos2Client
-│   ├── openrois-profile.yaml.example
+│   │           └── kachaka_ros2_adapter.py    # the adapter process
+│   ├── adapter.yaml.example
 │   └── README.md
+├── components/          # openrois-components-kachaka: the Kachaka components
 ├── kachaka-api/         # vendored kachaka-api submodule (gRPC SDK + ROS 2 bridge)
 └── utils/
 ```
@@ -41,12 +41,18 @@ topics and actions.
 ## Requirements
 
 - Python 3.12+
-- OpenRoIS adapter SDK and Kachaka components installed:
-  ```bash
-  pip install openrois-core openrois-components-kachaka
-  ```
+- The OpenRoIS packages from a clone of
+  [openrois/openrois](https://github.com/openrois/openrois): interfaces,
+  engine and components-core. They are not on PyPI yet;
+  `api/README.md` and `ros2/README.md` give the commands.
+- The Kachaka components of this repository, `components/`
+  (`openrois-components-kachaka`), which both paths host.
 - For the API path: `kachaka-api` Python library (vendored in `kachaka-api/python/`)
 - For the ROS 2 path: ROS 2 Jazzy Jalisco
+
+Each path is a thin adapter process: it hosts the Kachaka components of
+`components/` in an engine, reads its settings from
+`adapter.yaml`, and dials an OpenRoIS gateway on `/adapter`.
 
 ## Quick start
 
@@ -57,22 +63,11 @@ required.
 
 ```bash
 cd api
-pip install -r requirements.txt
-cp openrois-profile.yaml.example openrois-profile.yaml
-# Edit openrois-profile.yaml:
-#   environment.grpc_server -> <robot IP>:26400
-#   engine.gateway_url -> ws://<engine host>:8765
-python kachaka_api_adapter.py --config openrois-profile.yaml
+cp adapter.yaml.example adapter.yaml
+# Edit adapter.yaml: robot_address -> <robot IP>:26400,
+# gateway_url -> ws://<gateway host>:8765
+python kachaka_api_adapter.py --config adapter.yaml
 ```
-
-Required profile fields:
-
-| Field | Description | Example |
-|---|---|---|
-| `engine.id` | Engine identifier | `kachaka_01` |
-| `engine.gateway_url` | Engine WebSocket URL | `ws://127.0.0.1:8765` |
-| `environment.grpc_server` | Kachaka gRPC target | `192.168.100.203:26400` |
-| `environment.auto_homing` | Enable auto homing on connect | `false` |
 
 ### ROS 2 path (via bridge)
 
@@ -126,39 +121,29 @@ ros2 launch kachaka_grpc_ros2_bridge grpc_ros2_bridge.launch.xml \
 
 ```bash
 cd ros2
-cp openrois-profile.yaml.example openrois-profile.yaml
-# Edit openrois-profile.yaml:
-#   engine.gateway_url -> ws://<engine host>:8765
+cp adapter.yaml.example adapter.yaml
+# Edit adapter.yaml: gateway_url -> ws://<gateway host>:8765
 source /opt/ros/jazzy/setup.bash
 source kachaka-api/ros2/install/setup.bash
 source ros2_ws/install/setup.bash
-ros2 run openrois_kachaka_ros2 kachaka_adapter --config openrois-profile.yaml
+ros2 run openrois_kachaka_ros2 kachaka_adapter --config adapter.yaml
 ```
-
-Required profile fields:
-
-| Field | Description | Example |
-|---|---|---|
-| `engine.id` | Engine identifier | `kachaka_01` |
-| `engine.gateway_url` | Engine WebSocket URL | `ws://127.0.0.1:8765` |
-| `environment.ros2_node_name` | rclpy node name | `openrois_kachaka_ros2` |
-| `environment.robot_pose_topic` | Odometry topic | `/kachaka/odometry/odometry` |
-| `environment.locations_topic` | Location list topic | `/kachaka/layout/locations/list` |
-| `environment.command_action` | Navigation action | `/kachaka/kachaka_command/execute` |
 
 Topic names include the `/kachaka/` namespace used by the bridge
 (default namespace: `kachaka`). If you start the bridge with a custom
-namespace, update the topic names in the profile.
+namespace, update the topic names in `adapter.yaml`.
 
 See `api/README.md` and `ros2/README.md` for detailed instructions.
 
 ## Components
 
-| Component | Function | Queries | Commands | Events |
-|---|---|---|---|---|
-| SystemInformation | - | robot_position, component_status | | |
-| Navigation | actuation | get_parameter, component_status | execute, stop, set_parameter | reached_target |
-| NavigationInformation | - | locations, location_details, component_status | | |
+| Component | Type | Serves |
+|---|---|---|
+| `Navigation` | RoIS Navigation | `start`, `stop`, `suspend`, `resume`, `reached_target`, the Navigation parameters |
+| `SystemInformation` | RoIS SystemInformation | `robot_position`, `engine_status` |
+| `NavigationInformation` | Coarobo NavigationInformation | `destinations`, `destination_positions`, `map_info` |
+
+The engine answers `component_status` for every component.
 
 ## License
 

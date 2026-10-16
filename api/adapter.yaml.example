@@ -1,0 +1,14 @@
+# Settings of the Kachaka API adapter. Copy to adapter.yaml and set robot_address.
+# OPENROIS_ADAPTER_* environment variables and flags override the four common settings
+# at the top. The sections below them belong to the components.
+
+gateway_url: ws://127.0.0.1:8765
+engine_id: kachaka_01
+robot_address: 192.168.1.100:26400   # the Kachaka's gRPC API
+log_level: info
+
+navigation:
+  auto_homing: false                 # whether the Kachaka returns to its charger when idle
+
+navigation_information:
+  map_name: coarobo-kachaka_01@unicorn   # the map image the operator app shows
