@@ -1,0 +1,7 @@
+# The lint configuration of the openrois repository, so the components move there
+# unchanged once validated.
+target-version = "py312"
+line-length = 100
+
+[lint]
+select = ["E", "F", "I", "N", "W", "UP"]
