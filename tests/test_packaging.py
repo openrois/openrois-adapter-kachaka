@@ -55,3 +55,29 @@ def test_openrois_packages_have_the_engine_and_the_standard_profiles() -> None:
     codes = [p.identifier.code for p in (NAVIGATION_PROFILE, SYSTEM_INFORMATION_PROFILE)]
     assert codes == ["Navigation", "SystemInformation"]
     assert Engine is not None
+
+
+def test_the_console_script_runs_the_adapter() -> None:
+    from importlib.metadata import entry_points
+
+    from openrois_adapter_kachaka.cli import main
+
+    [script] = entry_points(group="console_scripts", name="openrois-adapter-kachaka")
+    assert script.load() is main
+
+
+def test_help_runs_without_the_robot_extra() -> None:
+    """``openrois-adapter-kachaka --help`` needs neither grpc nor kachaka_api."""
+    script = _WITHOUT_THE_ROBOT_EXTRA + (
+        "from openrois_adapter_kachaka.cli import main\n"
+        "try:\n"
+        "    main(['--help'])\n"
+        "except SystemExit as exc:\n"
+        "    print('exit', exc.code)\n"
+    )
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    lines = result.stdout.strip().splitlines()
+    assert lines[0] == "[]"
+    assert "Kachaka" in result.stdout
+    assert lines[-1] == "exit 0"
