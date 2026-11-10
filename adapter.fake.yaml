@@ -1,0 +1,11 @@
+# Settings of the Kachaka adapter for the fake Kachaka on this machine, started with
+# python -m openrois_adapter_kachaka.fake_robot. Select it with --config adapter.fake.yaml.
+
+gateway_url: ws://127.0.0.1:8765
+engine_id: kachaka_fake
+robot_address: 127.0.0.1:26400
+log_level: info
+
+connection:
+  retry: 1.0
+  lost_after: 2.0
