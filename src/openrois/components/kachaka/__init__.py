@@ -10,6 +10,12 @@ package imports without the ``robot`` extra.
 """
 
 from openrois.components.kachaka.connection import CommandPreempted, KachakaConnection
+from openrois.components.kachaka.navigation import KachakaNavigation
 from openrois.components.kachaka.system_information import KachakaSystemInformation
 
-__all__ = ["CommandPreempted", "KachakaConnection", "KachakaSystemInformation"]
+__all__ = [
+    "CommandPreempted",
+    "KachakaConnection",
+    "KachakaNavigation",
+    "KachakaSystemInformation",
+]
