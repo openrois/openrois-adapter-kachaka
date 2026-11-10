@@ -91,3 +91,8 @@ explicit_package_bases = true
 # kachaka_api is typed, but its generated gRPC module (the stub, the servicer and
 # add_KachakaApiServicer_to_server) has no annotations.
 untyped_calls_exclude = ["kachaka_api"]
+
+# grpcio ships no type information.
+[[tool.mypy.overrides]]
+module = ["grpc", "grpc.*"]
+ignore_missing_imports = true
