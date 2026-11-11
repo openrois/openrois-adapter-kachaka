@@ -9,11 +9,17 @@ at its own speed when it gives one, and a RotateInPlaceCommand turns the robot b
 angle at 1 rad/s. It has three locations, ``home`` (the charger), ``kitchen`` and
 ``meeting_room``, and a small map whose origin is turned.
 
+Its object detector publishes what it sees every ``detection_period`` seconds, an empty
+room at first. Until the first detection, a request for the detection waits, even with
+cursor 0.
+
 A test controls it: ``stop()`` and ``start()`` take the robot off the network and back on
 the same port, ``set_ready(False)`` makes it report not ready, ``fail_next()`` makes the
 next command fail, ``preempt()`` starts a command of another client, ``hold_starts()``
 keeps the answers of StartCommand back until ``release_starts()``, and ``received`` logs
-every request.
+every request. ``see()`` sets the persons and the other objects the detector sees,
+``set_detecting(False)`` stops the detector, ``refuse_detection()`` makes the robot refuse
+the request for the detection, and ``clock_offset`` puts the robot's clock ahead.
 
 Run it on its own, for the adapter with ``adapter.fake.yaml``::
 
@@ -68,6 +74,8 @@ TICK = 0.1
 
 # Speed of a turn in place, in radians per second.
 TURN_SPEED = 1.0
+# The period in seconds at which the object detector publishes what it sees.
+DETECTION_PERIOD = 0.2
 
 # The error codes of the fake, with the fields of the robot's GetRobotErrorCodeJson. A
 # real robot has its own table; the codes here only have to be told apart.
@@ -189,6 +197,12 @@ class FakeKachaka(pb2_grpc.KachakaApiServicer):
         self.errors: list[int] = []
         self.x, self.y, self.theta = 0.0, 0.0, 0.0
         self.history: list[pb2.History] = []
+        self.objects: list[pb2.ObjectDetection] = []
+        self.detection_period = DETECTION_PERIOD
+        self.detecting = True
+        self.detection_refused = False
+        # How far the robot's clock is ahead of this machine's, in seconds.
+        self.clock_offset = 0.0
 
         self._server: Any = None
         self._running: _Running | None = None
@@ -197,6 +211,8 @@ class FakeKachaka(pb2_grpc.KachakaApiServicer):
         self._refuse_next: int | None = None
         self._answer_starts = asyncio.Event()
         self._answer_starts.set()
+        self._detector: asyncio.Task[None] | None = None
+        self._detection: pb2.GetObjectDetectionResponse | None = None
 
         cursors = itertools.count(1_000_000)
         self._pose_topic = _Topic(cursors)
@@ -206,6 +222,7 @@ class FakeKachaka(pb2_grpc.KachakaApiServicer):
         self._error_topic = _Topic(cursors)
         self._settings_topic = _Topic(cursors)
         self._static_topic = _Topic(cursors)
+        self._detection_topic = _Topic(cursors)
 
     # The controls of a test.
 
@@ -238,6 +255,8 @@ class FakeKachaka(pb2_grpc.KachakaApiServicer):
         server.add_insecure_port(self.address)
         await server.start()
         self._server = server
+        if self._detector is None:
+            self._detector = asyncio.get_running_loop().create_task(self._detect())
         logger.info("The fake Kachaka serves on %s", self.address)
 
     async def stop(self) -> None:
@@ -254,6 +273,11 @@ class FakeKachaka(pb2_grpc.KachakaApiServicer):
             running.task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await running.task
+        detector, self._detector = self._detector, None
+        if detector is not None:
+            detector.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await detector
 
     async def __aenter__(self) -> Self:
         await self.start()
@@ -310,6 +334,37 @@ class FakeKachaka(pb2_grpc.KachakaApiServicer):
     def release_starts(self) -> None:
         """Send the answers of StartCommand that ``hold_starts()`` kept back."""
         self._answer_starts.set()
+
+    def see(
+        self,
+        *,
+        persons: Sequence[float] = (),
+        others: Sequence[tuple[pb2.ObjectLabel, float]] = (),
+    ) -> None:
+        """Set what the detector sees, from its next detection on.
+
+        Args:
+            persons: The score of each person.
+            others: The label and the score of each other object, such as a shelf.
+        """
+        labelled = [(pb2.OBJECT_LABEL_PERSON, score) for score in persons] + list(others)
+        self.objects = [
+            pb2.ObjectDetection(
+                label=label,
+                roi=pb2.RegionOfInterest(x_offset=160 * index, y_offset=200, height=400, width=120),
+                score=score,
+                distance_median=1.5,
+            )
+            for index, (label, score) in enumerate(labelled)
+        ]
+
+    def set_detecting(self, detecting: bool) -> None:
+        """Whether the detector publishes. While it does not, the latest detection stays."""
+        self.detecting = detecting
+
+    def refuse_detection(self, refused: bool = True) -> None:
+        """Whether the robot refuses GetObjectDetection, as software without the RPC does."""
+        self.detection_refused = refused
 
     def requests(self, method: str) -> list[Any]:
         """The requests received for one RPC, oldest first."""
@@ -448,6 +503,18 @@ class FakeKachaka(pb2_grpc.KachakaApiServicer):
         self._history_topic.publish()
         logger.info("Command %s ended: success=%s code=%s", running.command_id, success, error_code)
 
+    async def _detect(self) -> None:
+        """Publish what the detector sees, once each period, while it detects."""
+        while True:
+            await asyncio.sleep(self.detection_period)
+            if not self.detecting:
+                continue
+            stamp = time.time_ns() + int(self.clock_offset * 1e9)
+            self._detection = pb2.GetObjectDetectionResponse(
+                header=pb2.RosHeader(stamp_nsec=stamp), objects=self.objects
+            )
+            self._detection_topic.publish()
+
     def _log(self, method: str, request: Any) -> None:
         self.received.append(Received(method, request))
 
@@ -534,6 +601,22 @@ class FakeKachaka(pb2_grpc.KachakaApiServicer):
         return pb2.GetCurrentMapIdResponse(
             metadata=pb2.Metadata(cursor=self._static_topic.cursor), id=MAP_ID
         )
+
+    @override
+    async def GetObjectDetection(
+        self, request: pb2.GetRequest, context: Any
+    ) -> pb2.GetObjectDetectionResponse:
+        self._log("GetObjectDetection", request)
+        if self.detection_refused:
+            await context.abort(grpc.StatusCode.UNIMPLEMENTED, "Method not implemented!")
+        # Before the first detection, even cursor 0 waits for it.
+        while self._detection is None:
+            await self._detection_topic.wait(self._detection_topic.cursor)
+        await self._detection_topic.wait(request.metadata.cursor)
+        response = pb2.GetObjectDetectionResponse()
+        response.CopyFrom(self._detection)
+        response.metadata.cursor = self._detection_topic.cursor
+        return response
 
     @override
     async def StartCommand(
