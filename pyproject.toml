@@ -1,0 +1,98 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "openrois-adapter-kachaka"
+version = "0.1.0"
+description = "OpenRoIS adapter for the Preferred Robotics Kachaka: canonical RoIS components for the robot"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [
+    { name = "OpenRoIS Community" },
+]
+# Python 3.12: kachaka-api pins grpcio 1.66.1, which has no wheel for a later Python, so
+# the robot extra would need a C++ toolchain to build grpcio there.
+requires-python = ">=3.12"
+keywords = ["robotics", "rois", "omg", "hri", "kachaka", "navigation", "middleware"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Human Machine Interfaces",
+]
+# The OpenRoIS packages from PyPI. The cap keeps a later pre-release series, which may
+# change the component API, from breaking this release. The adapter imports pydantic and
+# websockets itself, at the engine's floors.
+dependencies = [
+    "openrois-interfaces>=0.1.0,<0.2",
+    "openrois-components-core>=0.1.0,<0.2",
+    "openrois-engine>=0.1.0,<0.2",
+    "pydantic>=2.10",
+    "websockets>=14.0",
+]
+
+[project.optional-dependencies]
+# The generated gRPC stubs of the Kachaka API, with grpcio and protobuf. The components
+# import them when they connect, so the package imports without them.
+robot = ["kachaka-api>=3.17.5,<4"]
+dev = [
+    "pytest>=8.4",
+    "pytest-asyncio>=1.0",
+    "mypy>=1.10",
+    "ruff>=0.4",
+    "openrois-gateway>=0.1.0,<0.2",
+    # The fake robot in the tests serves the Kachaka API with the same stubs.
+    "kachaka-api>=3.17.5,<4",
+]
+
+[project.urls]
+Homepage = "https://openrois.org"
+Repository = "https://github.com/openrois/openrois-adapter-kachaka"
+Issues = "https://github.com/openrois/openrois-adapter-kachaka/issues"
+
+[project.scripts]
+openrois-adapter-kachaka = "openrois_adapter_kachaka.cli:main"
+
+# openrois and openrois.components are namespace packages shared with the other OpenRoIS
+# distributions, so this one ships only openrois/components/kachaka/, next to the
+# adapter process.
+[tool.hatch.build.targets.wheel]
+packages = ["src/openrois", "src/openrois_adapter_kachaka"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE",
+    "/NOTICE",
+    "/adapter*.yaml",
+    "/pyproject.toml",
+    "/ruff.toml",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+files = ["src", "tests"]
+mypy_path = "src"
+explicit_package_bases = true
+# kachaka_api is typed, but its generated gRPC module (the stub, the servicer and
+# add_KachakaApiServicer_to_server) has no annotations.
+untyped_calls_exclude = ["kachaka_api"]
+
+# grpcio ships no type information.
+[[tool.mypy.overrides]]
+module = ["grpc", "grpc.*"]
+ignore_missing_imports = true

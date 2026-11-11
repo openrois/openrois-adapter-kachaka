@@ -1,0 +1,31 @@
+# Settings of the Kachaka adapter for a Kachaka on the network.
+# OPENROIS_ADAPTER_* environment variables and flags override the four common settings at
+# the top. The sections below them belong to the connection and the components. See
+# README.md for every setting.
+
+gateway_url: ws://127.0.0.1:8765
+engine_id: kachaka
+# The robot's IP address or host name, with :port when the port is not 26400.
+robot_address: 192.168.1.100
+log_level: info
+
+connection:
+  timeout: 5.0
+  retry: 3.0
+  lost_after: 6.0
+  poll: 10.0
+
+navigation:
+  # true or false sets whether the robot returns to its charger on its own; null leaves
+  # the robot's setting as it is.
+  auto_homing: null
+
+person_detection:
+  # Seconds a new number of persons has to hold before it is reported.
+  hold: 2.0
+  # The score, from 0 to 1, from which an object the robot's detector labels as a person
+  # counts.
+  min_score: 0.5
+  # Seconds the robot may send no detection before the component reports WARNING and no
+  # number of persons.
+  max_age: 5.0
