@@ -167,6 +167,17 @@ def test_debounce_starts_the_hold_again_at_each_change() -> None:
     assert debounce.update(1, 7.0) == 1
 
 
+def test_debounce_starts_the_hold_anew_after_skipped_readings() -> None:
+    debounce = Debounce(2.0)
+    assert debounce.update(0, 0.0) is None
+    assert debounce.update(0, 2.0) == 0
+    assert debounce.update(1, 3.0) is None
+    # Readings were skipped for a minute; the 1 from before does not count as held.
+    debounce.forget()
+    assert debounce.update(1, 60.0) is None
+    assert debounce.update(1, 62.0) == 1
+
+
 def test_debounce_without_a_hold_reports_at_once() -> None:
     debounce = Debounce(0.0)
     assert debounce.update(3, 1.0) == 3

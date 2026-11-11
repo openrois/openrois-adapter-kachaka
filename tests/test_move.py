@@ -1033,3 +1033,100 @@ async def test_suspend_and_resume_before_a_start_do_nothing(
     assert await robot.run("move", "stop") == "OK"
     assert fake_robot.requests("CancelCommand") == []
     assert fake_robot.requests("GetCommandState") == []
+
+
+# -- Cancels that race with a start --------------------------------------------------------
+
+
+async def test_a_second_stop_during_the_start_of_a_part_still_cancels_it(
+    host: Host, fake_robot: FakeKachaka
+) -> None:
+    robot = await move(host, fake_robot)
+    fake_robot.speed_scale = 1.0
+    await robot.set("move", line=[2000, 0])
+    # Two stops arrive after StartCommand left, before the robot answered.
+    fake_robot.hold_starts()
+    start = await robot.execute("move", "start")
+    await moving(fake_robot)
+    assert await robot.run("move", "stop") == "OK"
+    assert await robot.run("move", "stop") == "OK"
+    fake_robot.release_starts()
+    assert await robot.completed(start) == "ABORT"
+    await wait_for(lambda: fake_robot.running_command_id is None)
+    assert len(fake_robot.requests("CancelCommand")) == 1
+
+
+async def test_the_engine_stopping_during_the_start_of_a_part_cancels_it(
+    host: Host, fake_robot: FakeKachaka
+) -> None:
+    robot = await move(host, fake_robot)
+    fake_robot.speed_scale = 1.0
+    await robot.set("move", line=[2000, 0])
+    fake_robot.hold_starts()
+    await robot.execute("move", "start")
+    await moving(fake_robot)
+    assert await robot.run("move", "stop") == "OK"
+    stopping = asyncio.create_task(robot.engine.stop())
+    await asyncio.sleep(0.05)
+    fake_robot.release_starts()
+    await stopping
+    assert fake_robot.running_command_id is None
+    assert len(fake_robot.requests("CancelCommand")) == 1
+
+
+async def test_a_stop_does_not_cancel_the_motion_that_replaced_its_own(
+    host: Host, fake_robot: FakeKachaka
+) -> None:
+    connection = connection_to(fake_robot)
+    components = {"move": KachakaMove(connection), "navigation": KachakaNavigation(connection)}
+    robot: Robot = await host(components)
+    fake_robot.speed_scale = 1.0
+    await robot.set("navigation", target_positions=["meeting_room"])
+    await robot.set("move", line=[2000, 0])
+    drive = await robot.execute("navigation", "start")
+    old = await moving(fake_robot)
+
+    # The answer about the running command is slow on its way to the stop of Navigation.
+    asked = asyncio.Event()
+    answer = asyncio.Event()
+    ask = connection._running_command
+
+    async def slow() -> str | None:
+        running = await ask()
+        if not asked.is_set():
+            asked.set()
+            await answer.wait()
+        return running
+
+    connection._running_command = slow  # type: ignore[method-assign]
+    stop = await robot.execute("navigation", "stop")
+    await asked.wait()
+    motion = await robot.execute("move", "start")
+    await asyncio.sleep(0.1)
+    # The start of Move waits for the stop, which cancels the drive and nothing else.
+    assert fake_robot.running_command_id == old
+    answer.set()
+    assert await robot.completed(stop) == "OK"
+    assert await robot.completed(drive) == "ABORT"
+    await wait_for(lambda: fake_robot.running_command_id not in (None, old))
+    assert len(fake_robot.requests("CancelCommand")) == 1
+    fake_robot.speed_scale = 20.0
+    assert await robot.completed(motion) == "OK"
+
+
+async def test_a_motion_cancelled_after_a_failed_suspend_is_not_driven_again(
+    host: Host, fake_robot: FakeKachaka
+) -> None:
+    robot = await move(host, fake_robot, lost_after=30.0)
+    fake_robot.speed_scale = 1.0
+    await robot.set("move", line=[2000, 0])
+    start = await robot.execute("move", "start")
+    await moving(fake_robot)
+    await fake_robot.stop()
+    assert await robot.run("move", "suspend") == "ERROR"
+    await fake_robot.start()
+    # Another client cancels the motion, as the Kachaka app does.
+    await fake_robot.CancelCommand(pb2.EmptyRequest(), None)
+    assert await robot.completed(start) == "ERROR"
+    assert len(started(fake_robot)) == 1
+    assert fake_robot.running_command_id is None

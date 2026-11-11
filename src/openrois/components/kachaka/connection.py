@@ -43,7 +43,7 @@ import contextlib
 import json
 import logging
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from typing import TYPE_CHECKING, Any
 
 from openrois.components.core import Resource
@@ -190,6 +190,7 @@ class KachakaConnection(Resource):
         self._owners: dict[str, object] = {}
         # Held while a StartCommand is on its way, which may replace a running command.
         self._starting = asyncio.Lock()
+        self._tasks: set[asyncio.Task[Any]] = set()
         self._grpc: Any = None
         self._pb2_grpc: Any = None
         self._channel: Any = None
@@ -272,7 +273,13 @@ class KachakaConnection(Resource):
         self._watchdog = asyncio.create_task(self._watch(), name="kachaka-watchdog")
 
     async def close(self) -> None:
-        """Stop the watchdog and close the channel."""
+        """Let the cancels of commands that are on their way end, stop the watchdog and
+        close the channel."""
+        if self._tasks:
+            _, late = await asyncio.wait(self._tasks, timeout=self.timeout)
+            for task in late:
+                task.cancel()
+            await asyncio.gather(*late, return_exceptions=True)
         self._open = False
         self._up = False
         if self._watchdog is not None:
@@ -322,10 +329,15 @@ class KachakaConnection(Resource):
             RuntimeError: The connection is not open, or the robot refused the call.
             ConnectionError: The robot did not answer in time.
         """
-        owned = {command_id for command_id, by in self._owners.items() if by is owner}
-        if not owned or await self._running_command() not in owned:
+        if all(by is not owner for by in self._owners.values()):
             return False
-        await self._cancel_running()
+        # No StartCommand goes out between the look at the running command and its
+        # cancel, so the cancel never reaches a command that replaced it.
+        async with self._starting:
+            owned = {command_id for command_id, by in self._owners.items() if by is owner}
+            if not owned or await self._running_command() not in owned:
+                return False
+            await self._cancel_running()
         return True
 
     async def run_command(
@@ -370,20 +382,19 @@ class KachakaConnection(Resource):
             "GetLastCommandResult", pb2.GetRequest()
         )
         request = pb2.StartCommandRequest(command=command, cancel_all=cancel_all, title=title)
-        async with self._starting:
-            answer = asyncio.ensure_future(self.call("StartCommand", request))
-            try:
-                response: pb2.StartCommandResponse = await asyncio.shield(answer)
-            except asyncio.CancelledError:
-                await self._cancel_started(answer)
-                raise
-            if not response.result.success:
-                return response.result
-            command_id = response.command_id
-            if cancel_all:
-                # The robot ended whatever ran, so no older command runs any more.
-                self._owners.clear()
-            self._owners[command_id] = owner
+        # The start runs as a task of the connection, so a caller that is cancelled
+        # while the robot has not answered leaves it running: the command gets its
+        # owner, and is then cancelled.
+        start = self._spawn(self._start(request, owner, cancel_all))
+        try:
+            response: pb2.StartCommandResponse = await asyncio.shield(start)
+        except asyncio.CancelledError:
+            if not start.cancelled():
+                await asyncio.shield(self._spawn(self._cancel_started(start)))
+            raise
+        if not response.result.success:
+            return response.result
+        command_id = response.command_id
         if started is not None:
             started(command_id)
         try:
@@ -464,11 +475,24 @@ class KachakaConnection(Resource):
                 return pb2.Result(success=history.success, error_code=history.error_code)
         return None
 
-    async def _cancel_started(self, answer: asyncio.Future[pb2.StartCommandResponse]) -> None:
+    async def _start(
+        self, request: pb2.StartCommandRequest, owner: object | None, cancel_all: bool
+    ) -> pb2.StartCommandResponse:
+        """Send StartCommand and record the owner of the command the robot started."""
+        async with self._starting:
+            response: pb2.StartCommandResponse = await self.call("StartCommand", request)
+            if response.result.success:
+                if cancel_all:
+                    # The robot ended whatever ran, so no older command runs any more.
+                    self._owners.clear()
+                self._owners[response.command_id] = owner
+            return response
+
+    async def _cancel_started(self, start: asyncio.Task[pb2.StartCommandResponse]) -> None:
         """Cancel the command of a StartCommand the robot had not answered yet, for a
         task that was cancelled: its owner could not cancel it without its id."""
         try:
-            response = await answer
+            response = await start
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -477,6 +501,13 @@ class KachakaConnection(Resource):
         if response.result.success:
             await self._cancel_own(response.command_id)
 
+    def _spawn[T](self, work: Coroutine[Any, Any, T]) -> asyncio.Task[T]:
+        """Run ``work`` as a task of the connection, which ``close`` cancels."""
+        task = asyncio.get_running_loop().create_task(work)
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+        return task
+
     async def _cancel_own(self, command_id: str) -> None:
         """Cancel the command ``command_id`` on the robot if it still runs, for a task
         that was cancelled.
@@ -484,9 +515,11 @@ class KachakaConnection(Resource):
         A command that could not be cancelled keeps its owner, who can cancel it later.
         """
         try:
-            if await self._running_command() == command_id:
-                await self._cancel_running()
-                logger.info("Cancelled the command %s on the Kachaka", command_id)
+            # As in cancel: no StartCommand goes out between the look and the cancel.
+            async with self._starting:
+                if await self._running_command() == command_id:
+                    await self._cancel_running()
+                    logger.info("Cancelled the command %s on the Kachaka", command_id)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
