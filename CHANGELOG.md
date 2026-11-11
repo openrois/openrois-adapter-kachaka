@@ -28,7 +28,8 @@ with the adapter and have not been verified on a robot yet.
   robot does not answer for `connection.lost_after` seconds, every component reports
   ERROR, and they report READY again once it is back. The robot runs one command at a
   time, and the connection records which component started it: a component cancels only
-  its own command, and a command that another one replaced ends with ERROR.
+  its own command, and a command that another one replaced ends with ERROR. A command
+  whose start fails while it runs is cancelled on the robot.
 - `KachakaSystemInformation`, which answers `robot_position` with the robot's pose
   `x,y,theta` on its map, in meters and radians, and `engine_status` with the status of
   the engine.
