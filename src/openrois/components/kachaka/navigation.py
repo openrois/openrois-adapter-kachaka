@@ -195,8 +195,10 @@ class KachakaNavigation(Component):
         try:
             await self._connection.cancel(self)
         except (ConnectionError, RuntimeError) as exc:
-            # The engine lifts the hold of a suspend that fails.
+            # The engine lifts the hold of a suspend that fails, and a motion that ends
+            # later did not end by this suspend.
             self._resumed.set()
+            self._suspends -= 1
             raise CommandFailed(
                 CompletedStatus.ERROR, f"Could not halt the drive of the Kachaka: {exc}"
             ) from exc

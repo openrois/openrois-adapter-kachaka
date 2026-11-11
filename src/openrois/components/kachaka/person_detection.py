@@ -87,6 +87,11 @@ class Debounce:
             return value
         return None
 
+    def forget(self) -> None:
+        """Drop the value that is waiting to hold, after readings were skipped: the
+        next reading starts its hold anew."""
+        self._candidate = None
+
 
 @component(PERSON_DETECTION_PROFILE)
 class KachakaPersonDetection(Component):
@@ -219,6 +224,7 @@ class KachakaPersonDetection(Component):
             if not connection.is_up:
                 # The connection reports the robot that does not answer or is not ready.
                 cursor = 0
+                debounce.forget()
                 await asyncio.sleep(pause)
                 continue
             # The wait ends when the count becomes too old, and is renewed after that.
@@ -236,6 +242,7 @@ class KachakaPersonDetection(Component):
             except ConnectionError:
                 # The connection reports the robot that does not answer.
                 cursor = 0
+                debounce.forget()
                 await asyncio.sleep(pause)
                 continue
             except RuntimeError as exc:
@@ -245,6 +252,7 @@ class KachakaPersonDetection(Component):
                     logger.warning("The Kachaka gives no detection: %s", exc)
                 refused = True
                 cursor = 0
+                debounce.forget()
                 await asyncio.sleep(pause)
                 continue
             refused = False
@@ -262,6 +270,7 @@ class KachakaPersonDetection(Component):
             if self._suspended:
                 # The readings wait for the resume, which reports a changed count once
                 # it holds, as any change.
+                debounce.forget()
                 continue
             self._received = datetime.now(UTC)
             reported = debounce.update(self._persons(response), latest)
