@@ -14,10 +14,15 @@ from openrois.components.kachaka import (
     KachakaConnection,
     KachakaMove,
     KachakaNavigation,
+    KachakaPersonDetection,
     KachakaSystemInformation,
 )
 from openrois_adapter_kachaka import KachakaConfig, build_engine, load_config, main
-from openrois_adapter_kachaka.cli import ConnectionSettings, NavigationSettings
+from openrois_adapter_kachaka.cli import (
+    ConnectionSettings,
+    NavigationSettings,
+    PersonDetectionSettings,
+)
 
 ROOT = Path(__file__).parent.parent
 ADDRESS = "192.168.1.100"
@@ -184,11 +189,13 @@ def test_build_engine_hosts_the_components_on_one_connection() -> None:
         KachakaSystemInformation,
         KachakaNavigation,
         KachakaMove,
+        KachakaPersonDetection,
     ]
     assert [c.ref for c in components if isinstance(c, Component)] == [
         "kachaka_2/system_information",
         "kachaka_2/navigation",
         "kachaka_2/move",
+        "kachaka_2/person_detection",
     ]
     [connection] = components[0].rois_resources()
     assert isinstance(connection, KachakaConnection)
@@ -202,6 +209,58 @@ def test_build_engine_hosts_the_components_on_one_connection() -> None:
     navigation = components[1]
     assert isinstance(navigation, KachakaNavigation)
     assert navigation._auto_homing is False
+
+
+def test_person_detection_has_documented_defaults(tmp_path: Path) -> None:
+    detection = load(tmp_path, None, "--robot-address", ADDRESS).person_detection
+    assert (detection.hold, detection.min_score, detection.max_age) == (2.0, 0.5, 5.0)
+
+
+def test_adapter_yaml_sets_person_detection(tmp_path: Path) -> None:
+    config = load(
+        tmp_path,
+        f"robot_address: {ADDRESS}\n"
+        "person_detection:\n  hold: 0\n  min_score: 0.75\n  max_age: 10\n",
+    )
+    detection = config.person_detection
+    assert (detection.hold, detection.min_score, detection.max_age) == (0.0, 0.75, 10.0)
+
+
+@pytest.mark.parametrize(
+    ("setting", "value"),
+    [
+        ("dance", "true"),
+        ("hold", "-1"),
+        ("hold", ".inf"),
+        ("min_score", "-0.1"),
+        ("min_score", "1.5"),
+        ("max_age", "0"),
+        ("max_age", ".inf"),
+    ],
+)
+def test_an_unknown_or_invalid_person_detection_setting_is_refused(
+    tmp_path: Path, setting: str, value: str
+) -> None:
+    with pytest.raises(ConfigError, match=f"person_detection.{setting}"):
+        load(tmp_path, f"robot_address: {ADDRESS}\nperson_detection:\n  {setting}: {value}\n")
+
+
+def test_the_shipped_adapter_files_set_person_detection() -> None:
+    for name in ("adapter.yaml", "adapter.fake.yaml"):
+        config = load_config(["--config", str(ROOT / name)], {})
+        assert config.person_detection == PersonDetectionSettings()
+        assert "\nperson_detection:\n" in (ROOT / name).read_text()
+
+
+def test_build_engine_gives_person_detection_its_settings() -> None:
+    config = KachakaConfig(
+        robot_address=ADDRESS,
+        person_detection=PersonDetectionSettings(hold=1.0, min_score=0.25, max_age=8.0),
+    )
+    detection = build_engine(config).local_components()[3]
+    assert isinstance(detection, KachakaPersonDetection)
+    assert detection.ref == "kachaka/person_detection"
+    assert (detection._hold, detection._min_score, detection._max_age) == (1.0, 0.25, 8.0)
 
 
 def test_build_engine_needs_the_robot_address() -> None:

@@ -12,8 +12,8 @@ engine ids put two robots behind one gateway::
     # python -m openrois_adapter_kachaka.fake_robot
     openrois-adapter-kachaka --config adapter.fake.yaml
 
-The components are ``<engine id>/system_information`` and ``<engine id>/navigation``.
-``<engine id>/move`` moves the robot in straight lines and turns in place.
+The components are ``<engine id>/system_information``, ``<engine id>/navigation``,
+``<engine id>/move`` and ``<engine id>/person_detection``.
 The adapter reaches the robot at ``robot_address``, ``host`` or ``host:port``, on port
 26400 by default. While the robot does not answer, the components report ERROR, and the
 adapter drives the robot again once it is back.
@@ -40,6 +40,7 @@ from openrois.components.kachaka import (
     KachakaConnection,
     KachakaMove,
     KachakaNavigation,
+    KachakaPersonDetection,
     KachakaSystemInformation,
 )
 from openrois.components.kachaka.connection import parse_address
@@ -49,6 +50,7 @@ __all__ = [
     "ConnectionSettings",
     "KachakaConfig",
     "NavigationSettings",
+    "PersonDetectionSettings",
     "build_engine",
     "load_config",
     "main",
@@ -96,6 +98,35 @@ class NavigationSettings(_Section):
     )
 
 
+class PersonDetectionSettings(_Section):
+    """The PersonDetection component."""
+
+    hold: float = Field(
+        default=2.0,
+        ge=0,
+        allow_inf_nan=False,
+        description="Seconds a new number of persons has to hold before it is reported.",
+    )
+    min_score: float = Field(
+        default=0.5,
+        ge=0,
+        le=1,
+        description=(
+            "The score of the robot's detector from which an object it labels as a person "
+            "counts, from 0 to 1."
+        ),
+    )
+    max_age: float = Field(
+        default=5.0,
+        gt=0,
+        allow_inf_nan=False,
+        description=(
+            "Seconds the robot may send no detection before the component reports WARNING "
+            "and no number of persons."
+        ),
+    )
+
+
 class KachakaConfig(AdapterConfig):
     """The settings of one Kachaka adapter.
 
@@ -107,6 +138,7 @@ class KachakaConfig(AdapterConfig):
     engine_id: str = "kachaka"
     connection: ConnectionSettings = ConnectionSettings()
     navigation: NavigationSettings = NavigationSettings()
+    person_detection: PersonDetectionSettings = PersonDetectionSettings()
 
 
 def build_engine(config: KachakaConfig) -> Engine:
@@ -131,6 +163,16 @@ def build_engine(config: KachakaConfig) -> Engine:
         "navigation", KachakaNavigation(connection, auto_homing=config.navigation.auto_homing)
     )
     engine.add_component("move", KachakaMove(connection))
+    detection = config.person_detection
+    engine.add_component(
+        "person_detection",
+        KachakaPersonDetection(
+            connection,
+            hold=detection.hold,
+            min_score=detection.min_score,
+            max_age=detection.max_age,
+        ),
+    )
     return engine
 
 
