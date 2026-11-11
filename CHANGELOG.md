@@ -10,7 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0a1] - 2026-11-11
 
 The first release. The components pass their tests against the fake robot that comes
-with the adapter and have not been verified on a robot yet.
+with the adapter, and were run on a Kachaka with software 3.17.10. The README says what
+that run showed and what is still open.
 
 ### Added
 
@@ -28,8 +29,9 @@ with the adapter and have not been verified on a robot yet.
   robot does not answer for `connection.lost_after` seconds, every component reports
   ERROR, and they report READY again once it is back. The robot runs one command at a
   time, and the connection records which component started it: a component cancels only
-  its own command, and a command that another one replaced ends with ERROR. A command
-  whose start fails while it runs is cancelled on the robot.
+  its own command, and a command that another one replaced ends with ERROR, at once
+  when the other command was started through the adapter. A command whose start fails
+  because the robot refused a call while it ran is cancelled on the robot.
 - `KachakaSystemInformation`, which answers `robot_position` with the robot's pose
   `x,y,theta` on its map, in meters and radians, and `engine_status` with the status of
   the engine.
