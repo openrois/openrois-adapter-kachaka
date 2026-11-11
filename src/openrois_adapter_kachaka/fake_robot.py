@@ -3,9 +3,11 @@
 ``FakeKachaka`` answers the RPCs the adapter uses the way the robot does: data that
 carries a cursor is read by long-polling, a command runs in the robot's one command slot
 and ends with a result, and only the latest result is kept. The robot drives in a
-straight line at 0.5 m/s, moving in 0.1 s ticks; ``speed_scale`` makes it faster. It has
-three locations, ``home`` (the charger), ``kitchen`` and ``meeting_room``, and a small
-map whose origin is turned.
+straight line at 0.5 m/s, moving in 0.1 s ticks; ``speed_scale`` makes it faster. A
+MoveForwardCommand drives along the robot's heading, backwards for a negative distance,
+at its own speed when it gives one, and a RotateInPlaceCommand turns the robot by its
+angle at 1 rad/s. It has three locations, ``home`` (the charger), ``kitchen`` and
+``meeting_room``, and a small map whose origin is turned.
 
 A test controls it: ``stop()`` and ``start()`` take the robot off the network and back on
 the same port, ``set_ready(False)`` makes it report not ready, ``fail_next()`` makes the
@@ -63,6 +65,9 @@ DEFAULT_PORT = 26400
 # Speed in metres per second, and the period in seconds of each step of a drive.
 SPEED = 0.5
 TICK = 0.1
+
+# Speed of a turn in place, in radians per second.
+TURN_SPEED = 1.0
 
 # The error codes of the fake, with the fields of the robot's GetRobotErrorCodeJson. A
 # real robot has its own table; the codes here only have to be told apart.
@@ -355,6 +360,13 @@ class FakeKachaka(pb2_grpc.KachakaApiServicer):
 
     async def _drive(self, running: _Running, fail: int | None) -> None:
         """Run a command one tick at a time; even a command that does not move takes one."""
+        kind = running.command.WhichOneof("command")
+        if fail is None and kind == "move_forward_command":
+            await self._move_forward(running)
+            return
+        if fail is None and kind == "rotate_in_place_command":
+            await self._rotate_in_place(running)
+            return
         target = self._target(running.command)
         if fail is not None or target is None:
             await asyncio.sleep(TICK)
@@ -374,6 +386,39 @@ class FakeKachaka(pb2_grpc.KachakaApiServicer):
             self.y += dy / distance * step
             self.theta = math.atan2(dy, dx)
             self._pose_topic.publish()
+        self._finish(running, success=True)
+
+    async def _move_forward(self, running: _Running) -> None:
+        """Drive along the heading by the command's distance, backwards for a negative
+        one, at the command's speed or, without one, at the robot's."""
+        move = running.command.move_forward_command
+        sign = math.copysign(1.0, move.distance_meter)
+        left = abs(move.distance_meter)
+        while True:
+            await asyncio.sleep(TICK)
+            speed = (move.speed if move.speed > 0 else SPEED) * self.speed_scale
+            step = min(speed * TICK, left)
+            self.x += sign * step * math.cos(self.theta)
+            self.y += sign * step * math.sin(self.theta)
+            left -= step
+            self._pose_topic.publish()
+            if left <= 0:
+                break
+        self._finish(running, success=True)
+
+    async def _rotate_in_place(self, running: _Running) -> None:
+        """Turn by the command's angle, counter-clockwise for a positive one."""
+        angle = running.command.rotate_in_place_command.angle_radian
+        sign = math.copysign(1.0, angle)
+        left = abs(angle)
+        while True:
+            await asyncio.sleep(TICK)
+            step = min(TURN_SPEED * self.speed_scale * TICK, left)
+            self.theta = _wrap(self.theta + sign * step)
+            left -= step
+            self._pose_topic.publish()
+            if left <= 0:
+                break
         self._finish(running, success=True)
 
     def _finish(self, running: _Running, *, success: bool, error_code: int = 0) -> None:

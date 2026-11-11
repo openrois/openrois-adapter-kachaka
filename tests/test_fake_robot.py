@@ -47,6 +47,20 @@ def _move_to(location_id: str) -> pb2.StartCommandRequest:
     return pb2.StartCommandRequest(command=command, cancel_all=True, title="test")
 
 
+def _forward(distance: float, speed: float = 0.0) -> pb2.StartCommandRequest:
+    command = pb2.Command(
+        move_forward_command=pb2.MoveForwardCommand(distance_meter=distance, speed=speed)
+    )
+    return pb2.StartCommandRequest(command=command, cancel_all=True)
+
+
+def _rotate(degrees: float) -> pb2.StartCommandRequest:
+    command = pb2.Command(
+        rotate_in_place_command=pb2.RotateInPlaceCommand(angle_radian=math.radians(degrees))
+    )
+    return pb2.StartCommandRequest(command=command, cancel_all=True)
+
+
 async def _cursor(stub: Any) -> int:
     """The current cursor of the last command result."""
     response = await stub.GetLastCommandResult(pb2.GetRequest(), timeout=1.0)
@@ -179,6 +193,73 @@ async def test_the_pose_cursor_moves_while_driving(fake_robot: FakeKachaka, stub
     moved = await stub.GetRobotPose(request, timeout=1.0)
     assert moved.metadata.cursor != first.metadata.cursor
     assert 0.0 < moved.pose.x < 2.0
+
+
+@pytest.mark.parametrize(
+    ("distance", "end"), [(0.5, (1.0, 1.5, math.pi / 2)), (-0.5, (1.0, 0.5, math.pi / 2))]
+)
+async def test_move_forward_drives_along_the_heading(
+    fake_robot: FakeKachaka, stub: Any, distance: float, end: tuple[float, float, float]
+) -> None:
+    fake_robot.x, fake_robot.y, fake_robot.theta = 1.0, 1.0, math.pi / 2
+    cursor = await _cursor(stub)
+    started = await stub.StartCommand(_forward(distance), timeout=1.0)
+    assert started.result.success
+    result = await _next_result(stub, cursor)
+    assert result.command_id == started.command_id
+    assert result.result.success
+    # A negative distance drives backwards, and the robot keeps its heading.
+    assert fake_robot.pose == pytest.approx(end)
+
+
+@pytest.mark.parametrize(("speed", "step"), [(0.0, 0.05), (0.2, 0.02), (1.0, 0.1)])
+async def test_move_forward_drives_at_its_speed(
+    fake_robot: FakeKachaka, stub: Any, speed: float, step: float
+) -> None:
+    """Without a speed the robot drives 0.05 m in each 0.1 s tick, at 0.5 m/s."""
+    fake_robot.speed_scale = 1.0
+    first = await stub.GetRobotPose(pb2.GetRequest(), timeout=1.0)
+    await stub.StartCommand(_forward(1.0, speed), timeout=1.0)
+    request = pb2.GetRequest(metadata=pb2.Metadata(cursor=first.metadata.cursor))
+    moved = await stub.GetRobotPose(request, timeout=1.0)
+    assert moved.pose.x == pytest.approx(step)
+
+
+@pytest.mark.parametrize(
+    ("degrees", "heading"), [(90.0, 90.0), (-90.0, -90.0), (45.0, 45.0), (270.0, -90.0)]
+)
+async def test_rotate_in_place_turns_by_the_angle(
+    fake_robot: FakeKachaka, stub: Any, degrees: float, heading: float
+) -> None:
+    fake_robot.x, fake_robot.y = 1.0, 2.0
+    cursor = await _cursor(stub)
+    started = await stub.StartCommand(_rotate(degrees), timeout=1.0)
+    assert started.result.success
+    result = await _next_result(stub, cursor)
+    assert result.command_id == started.command_id
+    assert result.result.success
+    # A positive angle turns counter-clockwise, and the robot stays in place.
+    assert fake_robot.pose == pytest.approx((1.0, 2.0, math.radians(heading)))
+
+
+@pytest.mark.parametrize(
+    ("start", "axis", "end"), [(_forward(2.0), 0, 2.0), (_rotate(90.0), 2, math.pi / 2)]
+)
+async def test_cancel_stops_a_line_and_a_turn_midway(
+    fake_robot: FakeKachaka, stub: Any, start: pb2.StartCommandRequest, axis: int, end: float
+) -> None:
+    fake_robot.speed_scale = 1.0
+    cursor = await _cursor(stub)
+    started = await stub.StartCommand(start, timeout=1.0)
+    await asyncio.sleep(0.25)
+    await stub.CancelCommand(pb2.EmptyRequest(), timeout=1.0)
+    result = await _next_result(stub, cursor)
+    assert result.command_id == started.command_id
+    assert result.result.error_code == CANCELLED
+    stopped = fake_robot.pose
+    await asyncio.sleep(0.25)
+    assert fake_robot.pose == stopped
+    assert 0.0 < stopped[axis] < end
 
 
 async def test_cancel_stops_the_drive_with_a_failed_result(
