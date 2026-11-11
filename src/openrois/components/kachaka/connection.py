@@ -24,6 +24,13 @@ Each time the robot comes up, after a start, a restart or a loss, the connection
 the robot's table of error codes, for ``describe``, and runs the hooks registered with
 ``on_connect``, such as a setting a component applies to the robot.
 
+The robot runs one command at a time, for every client and for the Kachaka app. The
+connection records which component started each command it starts, the command's owner,
+and ``cancel`` cancels the running command only for its owner. So a component never
+cancels the motion of another component, of another client or of the Kachaka app. A
+command that starts while another one runs replaces it, as on the robot, and the
+command it replaced ends with ``CommandPreempted``.
+
 ``grpc`` and the Kachaka API stubs are imported when the connection opens, so the
 package imports without the ``robot`` extra. Without it, ``open`` fails and every
 component of the robot reports ERROR.
@@ -89,10 +96,12 @@ _FOLLOW_SLACK = 1.0
 
 
 class CommandPreempted(RuntimeError):  # noqa: N818, the name says what happened to it.
-    """A command ended without a result the robot reports, replaced by another command.
+    """Another command replaced a command before it ended.
 
-    The robot keeps only its latest command result. Another client, or the Kachaka app,
-    started a command that replaced ours, and the robot's history has no record of ours.
+    Either another component started a command through the connection, which the robot
+    ran in place of ours. Or ours ended without a result the robot reports: the robot
+    keeps only its latest command result, another client or the Kachaka app started a
+    command that replaced ours, and the robot's history has no record of ours.
     """
 
 
@@ -177,6 +186,10 @@ class KachakaConnection(Resource):
         self._failing_hooks: set[int] = set()
         self._titles: dict[int, str] = {}
         self._robot_errors: set[int] = set()
+        # The owner of each command started here that may still run, by command id.
+        self._owners: dict[str, object] = {}
+        # Held while a StartCommand is on its way, which may replace a running command.
+        self._starting = asyncio.Lock()
         self._grpc: Any = None
         self._pb2_grpc: Any = None
         self._channel: Any = None
@@ -296,25 +309,23 @@ class KachakaConnection(Resource):
             self._wake_watchdog()
             raise
 
-    async def cancel(self, command_id: str | None = None) -> bool:
-        """Cancel the robot's running command, or only the command ``command_id``.
+    async def cancel(self, owner: object) -> bool:
+        """Cancel the robot's running command if ``owner`` started it with ``run_command``.
+
+        A command that another component started, another client or the Kachaka app, is
+        left running. The robot is not asked while no command of ``owner`` may run.
 
         Returns:
-            Whether a cancel was sent: with ``command_id``, only while that command runs.
+            Whether a cancel was sent.
 
         Raises:
             RuntimeError: The connection is not open, or the robot refused the call.
             ConnectionError: The robot did not answer in time.
         """
-        from kachaka_api.generated import kachaka_api_pb2 as pb2
-
-        if command_id is not None:
-            state: pb2.GetCommandStateResponse = await self.call(
-                "GetCommandState", pb2.GetRequest()
-            )
-            if state.state != pb2.COMMAND_STATE_RUNNING or state.command_id != command_id:
-                return False
-        await self.call("CancelCommand", pb2.EmptyRequest())
+        owned = {command_id for command_id, by in self._owners.items() if by is owner}
+        if not owned or await self._running_command() not in owned:
+            return False
+        await self._cancel_running()
         return True
 
     async def run_command(
@@ -323,6 +334,7 @@ class KachakaConnection(Resource):
         *,
         title: str = "",
         cancel_all: bool = True,
+        owner: object | None = None,
         started: Callable[[str], None] | None = None,
     ) -> pb2.Result:
         """Start a command on the robot and wait until it ends.
@@ -330,19 +342,23 @@ class KachakaConnection(Resource):
         The robot runs one command at a time and keeps only its latest result, read by
         long-polling from a cursor. A result that another command's result replaced
         before it was read is looked up in the robot's history. A task cancelled while the
-        command runs cancels it on the robot, if it is still ours, and re-raises.
+        command starts or runs cancels it on the robot, if it is still ours, and
+        re-raises.
 
         Args:
             command: The command.
             title: The title the Kachaka app shows for it.
             cancel_all: Whether starting it cancels the command that runs.
+            owner: The component that starts the command, which alone cancels it with
+                ``cancel``.
             started: Called with the command id once the robot started the command.
 
         Returns:
             The robot's result: the refusal of StartCommand, or how the command ended.
 
         Raises:
-            CommandPreempted: The command ended without a result, replaced by another.
+            CommandPreempted: Another command started here replaced the command, or it
+                ended without a result, replaced by a command of another client.
             ConnectionError: The robot did not answer the start, or stopped answering
                 while the command ran, for ``lost_after`` seconds. The robot may still
                 move.
@@ -354,17 +370,40 @@ class KachakaConnection(Resource):
             "GetLastCommandResult", pb2.GetRequest()
         )
         request = pb2.StartCommandRequest(command=command, cancel_all=cancel_all, title=title)
-        response: pb2.StartCommandResponse = await self.call("StartCommand", request)
-        if not response.result.success:
-            return response.result
-        command_id = response.command_id
+        async with self._starting:
+            answer = asyncio.ensure_future(self.call("StartCommand", request))
+            try:
+                response: pb2.StartCommandResponse = await asyncio.shield(answer)
+            except asyncio.CancelledError:
+                await self._cancel_started(answer)
+                raise
+            if not response.result.success:
+                return response.result
+            command_id = response.command_id
+            if cancel_all:
+                # The robot ended whatever ran, so no older command runs any more.
+                self._owners.clear()
+            self._owners[command_id] = owner
         if started is not None:
             started(command_id)
         try:
-            return await self._follow(command_id, last.metadata.cursor)
+            result = await self._follow(command_id, last.metadata.cursor)
+        except CommandPreempted:
+            self._owners.pop(command_id, None)
+            raise
         except asyncio.CancelledError:
             await self._cancel_own(command_id)
             raise
+        if not result.success:
+            # A StartCommand on its way may be what ended the command: wait for its answer.
+            async with self._starting:
+                replaced = command_id not in self._owners
+            if replaced:
+                raise CommandPreempted(
+                    f"The command {command_id} was cancelled: another command replaced it"
+                )
+        self._owners.pop(command_id, None)
+        return result
 
     async def _follow(self, command_id: str, cursor: int) -> pb2.Result:
         """Long-poll the command results from ``cursor`` until the command ``command_id``
@@ -425,11 +464,28 @@ class KachakaConnection(Resource):
                 return pb2.Result(success=history.success, error_code=history.error_code)
         return None
 
+    async def _cancel_started(self, answer: asyncio.Future[pb2.StartCommandResponse]) -> None:
+        """Cancel the command of a StartCommand the robot had not answered yet, for a
+        task that was cancelled: its owner could not cancel it without its id."""
+        try:
+            response = await answer
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.debug("A cancelled StartCommand was not answered: %s", exc)
+            return
+        if response.result.success:
+            await self._cancel_own(response.command_id)
+
     async def _cancel_own(self, command_id: str) -> None:
         """Cancel the command ``command_id`` on the robot if it still runs, for a task
-        that was cancelled."""
+        that was cancelled.
+
+        A command that could not be cancelled keeps its owner, who can cancel it later.
+        """
         try:
-            if await self.cancel(command_id):
+            if await self._running_command() == command_id:
+                await self._cancel_running()
                 logger.info("Cancelled the command %s on the Kachaka", command_id)
         except asyncio.CancelledError:
             raise
@@ -440,6 +496,24 @@ class KachakaConnection(Resource):
                 self.address,
                 exc,
             )
+        else:
+            self._owners.pop(command_id, None)
+
+    async def _running_command(self) -> str | None:
+        """The id of the command the robot runs, or None while it runs none."""
+        from kachaka_api.generated import kachaka_api_pb2 as pb2
+
+        state: pb2.GetCommandStateResponse = await self.call("GetCommandState", pb2.GetRequest())
+        if state.state != pb2.COMMAND_STATE_RUNNING:
+            return None
+        command_id: str = state.command_id
+        return command_id
+
+    async def _cancel_running(self) -> None:
+        """Cancel whatever the robot runs. Only for a command known to be the caller's."""
+        from kachaka_api.generated import kachaka_api_pb2 as pb2
+
+        await self.call("CancelCommand", pb2.EmptyRequest())
 
     async def _rpc(
         self, rpc: str, request: object, timeout: float, *, long_poll: bool = False

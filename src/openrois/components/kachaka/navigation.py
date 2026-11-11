@@ -15,9 +15,10 @@ that has not reached its last target in time with TIMEOUT and cancels the drive;
 default, sets no limit. A suspension does not count towards it.
 
 The robot runs one command at a time, for every client and for the Kachaka app. ``stop``
-cancels whatever the robot runs. A start the engine aborts otherwise, when it stops or a
-client releases the component, cancels the robot's command only if it is still its own.
-A drive that another command replaced ends with ERROR.
+cancels only the drive of this component, and so does a start the engine aborts, when it
+stops or a client releases the component. A command another component started, another
+client or the Kachaka app, is left running. A start while another command runs replaces
+that command, and a drive that another command replaced ends with ERROR.
 
 The Kachaka has no pause. ``suspend`` cancels the drive and holds the start, and
 ``resume`` starts the drive to the same target again. A ``stop`` while suspended aborts
@@ -111,11 +112,8 @@ class KachakaNavigation(Component):
         # How many suspends and stops ran, so a start knows why its drive ended.
         self._suspends = 0
         self._stops = 0
-        # The robot's command of the running start, and the latest command it started.
+        # The robot's command of the running start.
         self._command_id: str | None = None
-        self._last_command_id: str | None = None
-        # Whether the engine cancelled the latest start, which cancelled its own command.
-        self._aborted = False
         # The time_limit of the running start.
         self._limit: asyncio.Timeout | None = None
         self._cancels: set[asyncio.Task[None]] = set()
@@ -151,49 +149,37 @@ class KachakaNavigation(Component):
         targets: list[str] = list(self.parameters.get("target_positions") or [])
         if not targets:
             raise CommandFailed(CompletedStatus.ERROR, "Set target_positions first")
-        self._aborted = False
         self._resumed.set()
         stops = self._stops
         time_limit: int = self.parameters.get("time_limit", 0)
+        if time_limit <= 0:
+            await self._drive(targets, stops)
+            return
         try:
-            if time_limit <= 0:
+            async with asyncio.timeout(time_limit) as limit:
+                self._limit = limit
                 await self._drive(targets, stops)
-                return
-            try:
-                async with asyncio.timeout(time_limit) as limit:
-                    self._limit = limit
-                    await self._drive(targets, stops)
-            except TimeoutError:
-                if not limit.expired():
-                    raise
-                raise CommandFailed(
-                    CompletedStatus.TIMEOUT,
-                    f"The Kachaka did not reach its last target within {time_limit} s",
-                ) from None
-            finally:
-                self._limit = None
-        except asyncio.CancelledError:
-            # A stop, a new start, a release or the engine stopping: the drive cancelled
-            # its own command on the robot.
-            self._aborted = True
-            raise
+        except TimeoutError:
+            if not limit.expired():
+                raise
+            raise CommandFailed(
+                CompletedStatus.TIMEOUT,
+                f"The Kachaka did not reach its last target within {time_limit} s",
+            ) from None
+        finally:
+            self._limit = None
 
     @command("stop")
     async def stop(self) -> None:
-        """Cancel whatever the robot runs.
+        """Cancel the drive of this component on the robot, if the robot still runs it.
 
-        After the engine aborted a start, as it stops or as a client releases the
-        component, only the start's own command is cancelled, if it still runs.
+        A command another component started, another client or the Kachaka app, is left
+        running.
         """
         self._stops += 1
         self._resumed.set()
-        aborted, self._aborted = self._aborted, False
         try:
-            if aborted:
-                if self._last_command_id is not None:
-                    await self._connection.cancel(self._last_command_id)
-                return
-            await self._connection.cancel()
+            await self._connection.cancel(self)
         except (ConnectionError, RuntimeError) as exc:
             raise CommandFailed(
                 CompletedStatus.ERROR, f"Could not cancel the drive of the Kachaka: {exc}"
@@ -204,11 +190,10 @@ class KachakaNavigation(Component):
         """Cancel the drive of the running start on the robot, and hold the start."""
         self._resumed.clear()
         self._suspends += 1
-        command_id = self._command_id
-        if command_id is None:
+        if self._command_id is None:
             return
         try:
-            await self._connection.cancel(command_id)
+            await self._connection.cancel(self)
         except (ConnectionError, RuntimeError) as exc:
             # The engine lifts the hold of a suspend that fails.
             self._resumed.set()
@@ -252,7 +237,7 @@ class KachakaNavigation(Component):
             suspends = self._suspends
             try:
                 result = await self._connection.run_command(
-                    drive, title=f"OpenRoIS: {text}", started=self._started
+                    drive, title=f"OpenRoIS: {text}", owner=self, started=self._started
                 )
             except (ConnectionError, CommandPreempted, RuntimeError) as exc:
                 raise CommandFailed(
@@ -274,15 +259,14 @@ class KachakaNavigation(Component):
     def _started(self, command_id: str) -> None:
         """Record the robot's command, and cancel it if a suspend came while it started."""
         self._command_id = command_id
-        self._last_command_id = command_id
         if not self._resumed.is_set():
-            task = asyncio.get_running_loop().create_task(self._cancel_own(command_id))
+            task = asyncio.get_running_loop().create_task(self._cancel_own())
             self._cancels.add(task)
             task.add_done_callback(self._cancels.discard)
 
-    async def _cancel_own(self, command_id: str) -> None:
+    async def _cancel_own(self) -> None:
         try:
-            await self._connection.cancel(command_id)
+            await self._connection.cancel(self)
         except (ConnectionError, RuntimeError) as exc:
             logger.warning("Could not halt the drive of the Kachaka: %s", exc)
 

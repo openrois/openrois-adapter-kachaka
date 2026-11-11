@@ -385,16 +385,47 @@ async def test_stop_cancels_the_drive(host: Host, fake_robot: FakeKachaka) -> No
     assert robot.events() == []
 
 
-async def test_stop_cancels_a_command_of_another_client(
-    host: Host, fake_robot: FakeKachaka
-) -> None:
+async def test_stop_leaves_a_command_of_another_client(host: Host, fake_robot: FakeKachaka) -> None:
     robot = await navigation(host, fake_robot)
     await robot.set("navigation", target_positions=["kitchen"])
     assert await robot.run("navigation", "start") == "OK"
     fake_robot.speed_scale = 1.0
-    fake_robot.preempt(to_location("meeting_room"))
+    other = fake_robot.preempt(to_location("meeting_room"))
     assert await robot.run("navigation", "stop") == "OK"
+    assert fake_robot.running_command_id == other
+    assert fake_robot.requests("CancelCommand") == []
+
+
+async def test_stop_leaves_a_command_that_replaced_the_drive(
+    host: Host, fake_robot: FakeKachaka
+) -> None:
+    robot = await navigation(host, fake_robot)
+    fake_robot.speed_scale = 1.0
+    await robot.set("navigation", target_positions=["meeting_room"])
+    start = await robot.execute("navigation", "start")
+    await driving(fake_robot)
+    other = fake_robot.preempt(to_location("kitchen"))
+    assert await robot.completed(start) == "ERROR"
+    assert await robot.run("navigation", "stop") == "OK"
+    assert fake_robot.running_command_id == other
+    assert fake_robot.requests("CancelCommand") == []
+
+
+async def test_a_stop_during_the_start_of_a_drive_cancels_it(
+    host: Host, fake_robot: FakeKachaka
+) -> None:
+    robot = await navigation(host, fake_robot)
+    fake_robot.speed_scale = 1.0
+    await robot.set("navigation", target_positions=["meeting_room"])
+    # The stop arrives after StartCommand left, before the robot answered.
+    fake_robot.hold_starts()
+    start = await robot.execute("navigation", "start")
+    await driving(fake_robot)
+    assert await robot.run("navigation", "stop") == "OK"
+    fake_robot.release_starts()
+    assert await robot.completed(start) == "ABORT"
     assert fake_robot.running_command_id is None
+    assert len(fake_robot.requests("CancelCommand")) == 1
 
 
 async def test_a_new_start_aborts_the_running_one(host: Host, fake_robot: FakeKachaka) -> None:
@@ -560,15 +591,25 @@ async def test_stop_while_suspended_aborts_the_start(host: Host, fake_robot: Fak
 async def test_a_suspend_during_the_start_of_a_drive_halts_it(
     host: Host, fake_robot: FakeKachaka
 ) -> None:
-    component = KachakaNavigation(connection_to(fake_robot))
-    await host({"navigation": component})
+    robot = await navigation(host, fake_robot)
     fake_robot.speed_scale = 1.0
+    await robot.set("navigation", target_positions=["meeting_room"])
     # The suspend arrives after StartCommand left, before the robot answered.
-    await component.suspend()
-    component._started(fake_robot.preempt(to_location("meeting_room")))
+    fake_robot.hold_starts()
+    start = await robot.execute("navigation", "start")
+    await driving(fake_robot)
+    assert await robot.run("navigation", "suspend") == "OK"
+    assert fake_robot.requests("CancelCommand") == []
+    fake_robot.release_starts()
     await wait_for(lambda: fake_robot.running_command_id is None)
     assert len(fake_robot.requests("CancelCommand")) == 1
-    await component.resume()
+    await asyncio.sleep(0.2)
+    assert len(started(fake_robot)) == 1
+
+    fake_robot.speed_scale = 20.0
+    assert await robot.run("navigation", "resume") == "OK"
+    assert await robot.completed(start) == "OK"
+    assert fake_robot.pose == location("meeting_room")
 
 
 async def test_suspend_and_resume_before_a_start_do_nothing(

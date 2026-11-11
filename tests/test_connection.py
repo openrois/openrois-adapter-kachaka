@@ -377,6 +377,14 @@ async def opened(host: Host, robot: FakeKachaka, **settings: Any) -> KachakaConn
     return connection
 
 
+async def running(robot: FakeKachaka) -> str:
+    """Wait until the robot runs a command, and return its id."""
+    await wait_for(lambda: robot.running_command_id is not None)
+    command_id = robot.running_command_id
+    assert command_id is not None
+    return command_id
+
+
 async def test_run_command_waits_for_the_result(host: Host, fake_robot: FakeKachaka) -> None:
     connection = await opened(host, fake_robot)
     started: list[str] = []
@@ -459,17 +467,108 @@ async def test_a_cancelled_run_cancels_its_command(host: Host, fake_robot: FakeK
     assert fake_robot.history[0].error_code == CANCELLED
 
 
-async def test_cancel_leaves_a_command_of_another_client(
+async def test_a_run_cancelled_before_the_robot_answers_cancels_its_command(
     host: Host, fake_robot: FakeKachaka
 ) -> None:
     connection = await opened(host, fake_robot)
     fake_robot.speed_scale = 1.0
-    other = fake_robot.preempt(move_to("meeting_room"))
-    assert not await connection.cancel("not-ours")
+    fake_robot.hold_starts()
+    task = asyncio.create_task(connection.run_command(move_to("meeting_room")))
+    ours = await running(fake_robot)
+    task.cancel()
+    fake_robot.release_starts()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert len(fake_robot.requests("CancelCommand")) == 1
+    assert fake_robot.running_command_id is None
+    assert fake_robot.history[0].id == ours
+
+
+# -- The owner of a command ----------------------------------------------------------------
+
+
+async def test_cancel_cancels_the_command_of_its_owner(host: Host, fake_robot: FakeKachaka) -> None:
+    connection = await opened(host, fake_robot)
+    fake_robot.speed_scale = 1.0
+    owner = object()
+    task = asyncio.create_task(connection.run_command(move_to("meeting_room"), owner=owner))
+    await running(fake_robot)
+    assert await connection.cancel(owner)
+    result = await task
+    assert (result.success, result.error_code) == (False, CANCELLED)
+    assert fake_robot.running_command_id is None
+    # The command ended, so nothing of the owner is left to cancel, and the robot is not asked.
+    asked = len(fake_robot.requests("GetCommandState"))
+    assert not await connection.cancel(owner)
+    assert len(fake_robot.requests("GetCommandState")) == asked
+    assert len(fake_robot.requests("CancelCommand")) == 1
+
+
+async def test_cancel_leaves_the_command_of_another_owner(
+    host: Host, fake_robot: FakeKachaka
+) -> None:
+    connection = await opened(host, fake_robot)
+    fake_robot.speed_scale = 1.0
+    owner, other = object(), object()
+    task = asyncio.create_task(connection.run_command(move_to("meeting_room"), owner=owner))
+    ours = await running(fake_robot)
+    assert not await connection.cancel(other)
+    assert fake_robot.requests("CancelCommand") == []
+    assert fake_robot.running_command_id == ours
+    assert await connection.cancel(owner)
+    await task
+
+
+async def test_cancel_leaves_a_command_of_another_client(
+    host: Host, fake_robot: FakeKachaka
+) -> None:
+    connection = await opened(host, fake_robot)
+    owner = object()
+    assert (await connection.run_command(move_to("kitchen"), owner=owner)).success
+    fake_robot.speed_scale = 1.0
+    task = asyncio.create_task(connection.run_command(move_to("meeting_room"), owner=owner))
+    await running(fake_robot)
+    other = fake_robot.preempt(move_to("home"))
+    assert not await connection.cancel(owner)
     assert fake_robot.requests("CancelCommand") == []
     assert fake_robot.running_command_id == other
-    assert await connection.cancel()
-    assert fake_robot.running_command_id is None
+    assert not (await task).success
+
+
+async def test_a_command_of_another_owner_replaces_the_running_one(
+    host: Host, fake_robot: FakeKachaka
+) -> None:
+    connection = await opened(host, fake_robot)
+    fake_robot.speed_scale = 1.0
+    first, second = object(), object()
+    replaced = asyncio.create_task(connection.run_command(move_to("meeting_room"), owner=first))
+    old = await running(fake_robot)
+    fake_robot.speed_scale = 20.0
+    result = await connection.run_command(move_to("kitchen"), owner=second)
+    assert result.success
+    assert fake_robot.pose == location("kitchen")
+    with pytest.raises(CommandPreempted, match=f"{old} was cancelled: another command replaced it"):
+        await replaced
+    assert fake_robot.requests("CancelCommand") == []
+    # Neither owner has a command left to cancel.
+    assert not await connection.cancel(first)
+    assert not await connection.cancel(second)
+
+
+async def test_a_refused_command_does_not_replace_the_running_one(
+    host: Host, fake_robot: FakeKachaka
+) -> None:
+    connection = await opened(host, fake_robot)
+    fake_robot.speed_scale = 5.0
+    first, second = object(), object()
+    task = asyncio.create_task(connection.run_command(move_to("meeting_room"), owner=first))
+    ours = await running(fake_robot)
+    fake_robot.fail_next(INVALID_COMMAND, on_start=True)
+    refused = await connection.run_command(move_to("kitchen"), owner=second)
+    assert (refused.success, refused.error_code) == (False, INVALID_COMMAND)
+    assert fake_robot.running_command_id == ours
+    assert not await connection.cancel(second)
+    assert (await task).success
 
 
 async def test_a_robot_lost_during_a_command_ends_it(host: Host, fake_robot: FakeKachaka) -> None:
