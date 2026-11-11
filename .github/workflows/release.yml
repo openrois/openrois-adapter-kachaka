@@ -65,7 +65,10 @@ jobs:
     needs: check-version
     runs-on: ubuntu-latest
     environment: pypi
+    # Permissions of a job replace those of the workflow, so the checkout of a private
+    # repository needs its own read access here.
     permissions:
+      contents: read
       id-token: write
     steps:
       - uses: actions/checkout@v7
