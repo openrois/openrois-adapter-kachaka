@@ -34,12 +34,12 @@ serves the robot's four components.
 
 ## Status
 
-Version 0.1.0, alpha, pre-1.0, unstable API. The four components and the adapter command
+Version 0.1.0a1, alpha, pre-1.0, unstable API. The four components and the adapter command
 run on the released `openrois-engine`, `openrois-components-core` and
 `openrois-interfaces`, and pass their tests against the fake robot that comes with the
-adapter. They have not been verified on a robot yet, so the points under
-[Not Verified on a Robot](#not-verified-on-a-robot) are open. The settings and the
-behaviour may still change before 1.0.
+adapter. They were also run on a Kachaka: [On a Robot](#on-a-robot) says what that run
+showed and what is still open. The settings and the behaviour may still change before
+1.0.
 
 ## Components
 
@@ -72,9 +72,13 @@ Navigation and Move share that one place:
 - `stop` on a component cancels only that component's own motion. A drive of the other
   component, of another client or of the Kachaka app keeps running.
 - A `start` of Move while Navigation drives replaces the drive, and the other way round.
-  The start that was replaced ends with ERROR and says that another command replaced it.
+  The start that was replaced ends with ERROR at once and says that another command
+  replaced it.
 - A command from the Kachaka app or another client ends a running `start` with ERROR in
-  the same way.
+  the same way. The robot does not announce it, so the adapter notices it at its next
+  check of the command, which can take up to about ten seconds.
+- A `start` that ends with ERROR because the robot refused a call cancels its own
+  command, so the robot does not drive on after the application was told of the error.
 
 The Kachaka has no pause. `suspend` cancels the motion on the robot and holds the
 `start`, and `resume` continues it: Navigation drives to the same target again, and Move
@@ -103,8 +107,8 @@ turns and drives what remains. A `stop` while suspended ends the `start` with AB
   skipped: `[0, 90]` only turns and `[500, 0]` only drives.
 - `time`: seconds, 0 or more. 0, the default, drives at the robot's own speed. A
   positive time sets the speed of the straight line to the distance divided by the time,
-  kept between 0.05 and 0.3 m/s. The turn has no speed setting, so the time is best
-  effort.
+  kept between 0.05 and 0.3 m/s. The turn has no speed setting and the robot is slow to
+  start a line, so the time is best effort, and a short line takes longer.
 - `curve`: this version drives no curves, and a `curve` that is not empty is refused.
 
 A turn of more than 90 degrees is sent to the robot as equal turns of at most 90 degrees,
@@ -124,27 +128,44 @@ count of 0: while the robot has sent no detection for `person_detection.max_age`
 seconds, the component reports WARNING and no number, and it reports the number afresh
 once detections arrive again.
 
-### Not Verified on a Robot
+### On a Robot
 
-These points follow the documentation of the Kachaka API and are still to be confirmed
-on a robot:
+The components were run on one Kachaka with software 3.17.10 that carried a shelf. That
+run showed:
 
-- Whether the detector sends detections while the robot sits on its charger, at what
-  rate, and with which scores for persons. The camera sits low on the robot's body.
-- Which speeds the robot accepts for a straight line, and how close the duration of a
-  line comes to `time`.
-- That the robot is at rest when it reports a cancelled motion, which the remainder
-  after a `suspend` relies on.
+- The detector sends detections about 2.5 times a second, also while the robot sits on
+  its charger and while nothing is in view. The robot reports only persons with a score
+  of 0.5 or more, so a `person_detection.min_score` up to 0.5 lets every person through.
+- A cancelled motion leaves the robot at rest within a second, about 2 cm further on. A
+  line of 1 m that was suspended and resumed came out at 1.003 m.
+- The robot is slow to start a line: at 0.1 m/s it had covered 10 cm after 3 seconds,
+  and then drove 0.76 m in 9 seconds.
+- A line of 300 mm at the robot's own speed took 6.5 seconds and came out at 238 mm by
+  the robot's own position, and the same line backwards at 293 mm.
+- A turn of 90 degrees came out between 88 and 95 degrees. With the shelf on, a turn in
+  place moved the position the robot reports by 7 to 25 cm.
+
+Still open:
+
+- Which speeds the robot accepts for a straight line. A line at 0.1 m/s was run. At
+  0.05 m/s the robot had not moved after 1.8 seconds, when another command replaced the
+  line, and 0.3 m/s was not run.
+- A robot without a shelf, `time_limit`, a pose as a target, two applications at once
+  and the loss of the robot during a motion were not part of the run. The tests cover
+  them against the fake robot only.
+- That a `start` which another component replaced ends at once was added after the run.
+  On the robot it ended 9 seconds later.
 
 ## Install
 
 The adapter needs Python 3.12: the Kachaka API package pins a gRPC version that has no
-wheel for a later Python. From a clone of this repository, install the adapter with the
-`robot` extra, which brings the Kachaka API package, and the gateway:
+wheel for a later Python. Install the adapter with the `robot` extra, which brings the
+Kachaka API package, and the gateway:
 
 ```bash
 uv venv --python 3.12 ~/venvs/openrois-kachaka
-uv pip install --python ~/venvs/openrois-kachaka ".[robot]" openrois-gateway
+uv pip install --python ~/venvs/openrois-kachaka "openrois-adapter-kachaka[robot]" \
+  openrois-gateway
 ```
 
 The robot's API must be reachable from this machine on port 26400. The Kachaka app
@@ -154,8 +175,8 @@ shows the robot's IP address.
 
 Start an [OpenRoIS gateway](https://pypi.org/project/openrois-gateway/) first,
 `openrois-gateway`, on `ws://127.0.0.1:8765` by default. Then start one adapter per
-robot. Each command runs until Ctrl+C, so give each its own terminal, where the
-environment is active:
+robot, with the settings files of the [next section](#the-settings-files). Each command
+runs until Ctrl+C, so give each its own terminal, where the environment is active:
 
 ```bash
 source ~/venvs/openrois-kachaka/bin/activate
@@ -175,6 +196,71 @@ The adapter checks the robot every `connection.retry` seconds and connects again
 robot that was switched off or dropped off the network is back. The adapter and the
 robot start in any order. Two adapters with different engine ids put two robots behind
 one gateway.
+
+### The Settings Files
+
+The repository and the source distribution ship both files. `adapter.yaml`, for a
+Kachaka on the network:
+
+```yaml
+# Settings of the Kachaka adapter for a Kachaka on the network.
+# OPENROIS_ADAPTER_* environment variables and flags override the four common settings at
+# the top. The sections below them belong to the connection and the components. See
+# README.md for every setting.
+
+gateway_url: ws://127.0.0.1:8765
+engine_id: kachaka
+# The robot's IP address or host name, with :port when the port is not 26400.
+robot_address: 192.168.1.100
+log_level: info
+
+connection:
+  timeout: 5.0
+  retry: 3.0
+  lost_after: 6.0
+  poll: 10.0
+
+navigation:
+  # true or false sets whether the robot returns to its charger on its own; null leaves
+  # the robot's setting as it is.
+  auto_homing: null
+
+person_detection:
+  # Seconds a new number of persons has to hold before it is reported.
+  hold: 2.0
+  # The score, from 0 to 1, from which an object the robot's detector labels as a person
+  # counts.
+  min_score: 0.5
+  # Seconds the robot may send no detection before the component reports WARNING and no
+  # number of persons.
+  max_age: 5.0
+```
+
+`adapter.fake.yaml`, for the fake robot on this machine:
+
+```yaml
+# Settings of the Kachaka adapter for the fake Kachaka on this machine, started with
+# python -m openrois_adapter_kachaka.fake_robot. Select it with --config adapter.fake.yaml.
+
+gateway_url: ws://127.0.0.1:8765
+engine_id: kachaka_fake
+robot_address: 127.0.0.1:26400
+log_level: info
+
+connection:
+  retry: 1.0
+  lost_after: 2.0
+
+person_detection:
+  # Seconds a new number of persons has to hold before it is reported.
+  hold: 2.0
+  # The score, from 0 to 1, from which an object the robot's detector labels as a person
+  # counts.
+  min_score: 0.5
+  # Seconds the robot may send no detection before the component reports WARNING and no
+  # number of persons.
+  max_age: 5.0
+```
 
 ### Settings
 
@@ -196,7 +282,7 @@ The others are only in the file:
 | `connection.timeout` | `5.0` | Seconds to wait for an answer of the robot |
 | `connection.retry` | `3.0` | Seconds between two checks of the robot |
 | `connection.lost_after` | `6.0` | Seconds a robot that answered before may stop answering before it counts as lost |
-| `connection.poll` | `10.0` | Seconds one wait for the result of a command lasts before the adapter checks that the command still runs |
+| `connection.poll` | `10.0` | Seconds one wait for the result of a command lasts before the adapter checks that the command still runs. The robot ends such a wait itself after about 9 seconds |
 | `navigation.auto_homing` | none | `true` or `false` sets whether the robot returns to its charger on its own after a while without commands, each time the robot comes up. Without it the robot's setting stays as it is |
 | `person_detection.hold` | `2.0` | Seconds a new number of persons holds before it is reported |
 | `person_detection.min_score` | `0.5` | The score from which a person counts, from 0 to 1 |
@@ -225,6 +311,9 @@ ruff format --check .
 mypy
 pytest
 ```
+
+A tag such as `v0.1.0-alpha.1` releases the version of `pyproject.toml`, 0.1.0a1, to
+PyPI, and then creates the GitHub release with its section of the changelog.
 
 ## License
 

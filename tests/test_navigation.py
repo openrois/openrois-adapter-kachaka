@@ -320,9 +320,38 @@ async def test_a_robot_lost_during_the_drive_is_an_error(
     assert "the robot may still be moving" in caplog.text
 
 
+async def test_a_robot_that_ends_the_wait_for_the_result_does_not_end_the_drive(
+    host: Host, fake_robot: FakeKachaka
+) -> None:
+    robot = await navigation(host, fake_robot)
+    # A real robot ends a wait for the result after some seconds, with CANCELLED.
+    fake_robot.result_wait = 0.2
+    fake_robot.speed_scale = 4.0
+    await robot.set("navigation", target_positions=["meeting_room"])
+    assert await robot.run("navigation", "start") == "OK"
+    assert len(fake_robot.requests("GetLastCommandResult")) >= 4
+    assert fake_robot.pose == pytest.approx(location("meeting_room"))
+    assert fake_robot.requests("CancelCommand") == []
+
+
+async def test_a_start_that_fails_while_the_robot_drives_cancels_the_drive(
+    host: Host, fake_robot: FakeKachaka
+) -> None:
+    robot = await navigation(host, fake_robot, poll=0.3)
+    fake_robot.speed_scale = 1.0
+    await robot.set("navigation", target_positions=["meeting_room"])
+    start = await robot.execute("navigation", "start")
+    await driving(fake_robot)
+    fake_robot.refuse_results()
+    assert await robot.completed(start) == "ERROR"
+    await wait_for(lambda: fake_robot.running_command_id is None)
+    assert len(fake_robot.requests("CancelCommand")) == 1
+
+
 async def test_a_command_of_another_client_ends_the_start_with_error(
     host: Host, fake_robot: FakeKachaka, caplog: pytest.LogCaptureFixture
 ) -> None:
+    fake_robot.replaced_result = True
     robot = await navigation(host, fake_robot)
     fake_robot.speed_scale = 1.0
     await robot.set("navigation", target_positions=["meeting_room"])
@@ -339,6 +368,7 @@ async def test_a_command_of_another_client_ends_the_start_with_error(
 async def test_a_result_skipped_by_the_cursor_comes_from_the_history(
     host: Host, fake_robot: FakeKachaka, caplog: pytest.LogCaptureFixture
 ) -> None:
+    fake_robot.replaced_result = True
     robot = await navigation(host, fake_robot)
     fake_robot.speed_scale = 1.0
     await robot.set("navigation", target_positions=["meeting_room"])
@@ -399,6 +429,7 @@ async def test_stop_leaves_a_command_of_another_client(host: Host, fake_robot: F
 async def test_stop_leaves_a_command_that_replaced_the_drive(
     host: Host, fake_robot: FakeKachaka
 ) -> None:
+    fake_robot.replaced_result = True
     robot = await navigation(host, fake_robot)
     fake_robot.speed_scale = 1.0
     await robot.set("navigation", target_positions=["meeting_room"])

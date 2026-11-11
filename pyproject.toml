@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "openrois-adapter-kachaka"
-version = "0.1.0"
+version = "0.1.0a1"
 description = "OpenRoIS adapter for the Preferred Robotics Kachaka: canonical RoIS components for the robot"
 readme = "README.md"
 license = "Apache-2.0"

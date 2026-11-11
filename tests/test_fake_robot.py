@@ -290,7 +290,23 @@ async def test_cancel_without_a_command_succeeds(stub: Any) -> None:
     assert cancelled.command.WhichOneof("command") is None
 
 
+async def test_a_replaced_command_gets_no_result(fake_robot: FakeKachaka, stub: Any) -> None:
+    fake_robot.speed_scale = 1.0
+    first = await stub.StartCommand(_move_to("kitchen"), timeout=1.0)
+    cursor = await _cursor(stub)
+    second = await stub.StartCommand(_move_to("meeting_room"), timeout=1.0)
+    assert second.result.success
+
+    # As on a real robot, the first one ends without a result.
+    state = await stub.GetCommandState(pb2.GetRequest(), timeout=1.0)
+    assert state.command_id == second.command_id
+    assert await _cursor(stub) == cursor
+    history = await stub.GetHistoryList(pb2.GetRequest(), timeout=1.0)
+    assert first.command_id not in [h.id for h in history.histories]
+
+
 async def test_a_new_command_cancels_the_running_one(fake_robot: FakeKachaka, stub: Any) -> None:
+    fake_robot.replaced_result = True
     fake_robot.speed_scale = 1.0
     first = await stub.StartCommand(_move_to("kitchen"), timeout=1.0)
     cursor = await _cursor(stub)
@@ -368,6 +384,7 @@ async def test_a_preempting_command_replaces_ours_and_the_history_keeps_it(
     fake_robot: FakeKachaka, stub: Any
 ) -> None:
     """A result published between two reads is skipped by the cursor, but not by the history."""
+    fake_robot.replaced_result = True
     fake_robot.speed_scale = 1.0
     cursor = await _cursor(stub)
     ours = await stub.StartCommand(_move_to("kitchen"), timeout=1.0)

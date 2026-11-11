@@ -89,6 +89,8 @@ _STUCK_CHECKS = 2
 # How long a started command may be neither running nor finished before it counts as
 # replaced by another command, in seconds. The robot can take a moment to report it.
 _MISSING_GRACE = 1.0
+# The shortest time between two waits for the result of a command that still runs.
+_POLL_FLOOR = 0.2
 
 # How long a command may go unfollowed while the robot does not answer, beyond
 # ``lost_after``, in case the watchdog has not counted the robot as lost yet, in seconds.
@@ -188,6 +190,8 @@ class KachakaConnection(Resource):
         self._robot_errors: set[int] = set()
         # The owner of each command started here that may still run, by command id.
         self._owners: dict[str, object] = {}
+        # Set for a command once a command started here replaced it.
+        self._replaced: dict[str, asyncio.Event] = {}
         # Held while a StartCommand is on its way, which may replace a running command.
         self._starting = asyncio.Lock()
         self._tasks: set[asyncio.Task[Any]] = set()
@@ -374,7 +378,8 @@ class KachakaConnection(Resource):
             ConnectionError: The robot did not answer the start, or stopped answering
                 while the command ran, for ``lost_after`` seconds. The robot may still
                 move.
-            RuntimeError: The connection is not open, or the robot refused a call.
+            RuntimeError: The connection is not open, or the robot refused a call. A
+                command that ran by then is cancelled on the robot.
         """
         from kachaka_api.generated import kachaka_api_pb2 as pb2
 
@@ -398,12 +403,19 @@ class KachakaConnection(Resource):
         if started is not None:
             started(command_id)
         try:
-            result = await self._follow(command_id, last.metadata.cursor)
+            result = await self._follow_until_replaced(command_id, last.metadata.cursor)
         except CommandPreempted:
             self._owners.pop(command_id, None)
             raise
         except asyncio.CancelledError:
-            await self._cancel_own(command_id)
+            # The cancel runs as a task of the connection, so a caller that is cancelled
+            # again does not stop it half way.
+            await asyncio.shield(self._spawn(self._cancel_own(command_id)))
+            raise
+        except RuntimeError:
+            # The robot refused a call while the command ran, so nobody follows the
+            # command any more: it does not go on without its caller.
+            await asyncio.shield(self._spawn(self._cancel_own(command_id)))
             raise
         if not result.success:
             # A StartCommand on its way may be what ended the command: wait for its answer.
@@ -416,6 +428,54 @@ class KachakaConnection(Resource):
         self._owners.pop(command_id, None)
         return result
 
+    async def _follow_until_replaced(self, command_id: str, cursor: int) -> pb2.Result:
+        """Follow the command ``command_id`` until it ends or a command started here
+        replaces it. The robot gives a replaced command no result, so the wait for one
+        would only end with the robot's own end of it, seconds later."""
+        replaced = self._replaced.get(command_id)
+        if replaced is None:
+            # A start that came right after this one replaced the command already.
+            raise CommandPreempted(
+                f"The command {command_id} was cancelled: another command replaced it"
+            )
+        follow = asyncio.ensure_future(self._follow(command_id, cursor))
+        waiter = asyncio.ensure_future(replaced.wait())
+        try:
+            await asyncio.wait({follow, waiter}, return_when=asyncio.FIRST_COMPLETED)
+            if follow.done():
+                return follow.result()
+            # A command that ended by itself just before the other one started has a
+            # result, which the follow had not read yet.
+            result = await self._result_after_replaced(command_id)
+            if result is not None:
+                return result
+            raise CommandPreempted(
+                f"The command {command_id} was cancelled: another command replaced it"
+            )
+        finally:
+            self._replaced.pop(command_id, None)
+            for task in (follow, waiter):
+                task.cancel()
+            await asyncio.gather(follow, waiter, return_exceptions=True)
+
+    async def _result_after_replaced(self, command_id: str) -> pb2.Result | None:
+        """The result of the command ``command_id`` if the robot has one although another
+        command took its place: its latest result, or one in its history. None if it has
+        none, or does not say."""
+        from kachaka_api.generated import kachaka_api_pb2 as pb2
+
+        try:
+            last: pb2.GetLastCommandResultResponse = await self._rpc(
+                "GetLastCommandResult", pb2.GetRequest(), self.timeout
+            )
+            if last.command_id == command_id:
+                result: pb2.Result = last.result
+                return result
+            return await self._from_history(command_id)
+        except (ConnectionError, RuntimeError) as exc:
+            logger.debug("Could not look for a result of the command %s: %s", command_id, exc)
+            return None
+
     async def _follow(self, command_id: str, cursor: int) -> pb2.Result:
         """Long-poll the command results from ``cursor`` until the command ``command_id``
         ends."""
@@ -427,6 +487,7 @@ class KachakaConnection(Resource):
             try:
                 deadline = self.poll if missing_since is None else _MISSING_GRACE
                 request = pb2.GetRequest(metadata=pb2.Metadata(cursor=cursor))
+                asked = time.monotonic()
                 last = await self._rpc("GetLastCommandResult", request, deadline, long_poll=True)
                 if last is not None:
                     cursor = last.metadata.cursor
@@ -438,6 +499,8 @@ class KachakaConnection(Resource):
                 if state.state == pb2.COMMAND_STATE_RUNNING and state.command_id == command_id:
                     missing_since = None
                     failing_since = None
+                    # A robot that ends its waits at once is not asked without a pause.
+                    await asyncio.sleep(max(0.0, _POLL_FLOOR - (time.monotonic() - asked)))
                     continue
                 found = await self._from_history(command_id)
             except ConnectionError as exc:
@@ -485,7 +548,11 @@ class KachakaConnection(Resource):
                 if cancel_all:
                     # The robot ended whatever ran, so no older command runs any more.
                     self._owners.clear()
+                    for replaced in self._replaced.values():
+                        replaced.set()
+                    self._replaced.clear()
                 self._owners[response.command_id] = owner
+                self._replaced[response.command_id] = asyncio.Event()
             return response
 
     async def _cancel_started(self, start: asyncio.Task[pb2.StartCommandResponse]) -> None:
@@ -553,7 +620,9 @@ class KachakaConnection(Resource):
     ) -> Any:
         """Call an RPC with a deadline, turning gRPC errors into Python ones.
 
-        With ``long_poll``, a deadline that passes returns None.
+        With ``long_poll``, a wait that ends without data returns None: the deadline
+        passed, or the robot ended the wait itself, which it does with CANCELLED after
+        some seconds.
         """
         stub, channel, grpc = self._stub, self._channel, self._grpc
         if stub is None:
@@ -571,7 +640,10 @@ class KachakaConnection(Resource):
             raise
         except grpc.aio.AioRpcError as exc:
             code = exc.code()
-            if code == grpc.StatusCode.DEADLINE_EXCEEDED and long_poll:
+            if long_poll and code in (
+                grpc.StatusCode.DEADLINE_EXCEEDED,
+                grpc.StatusCode.CANCELLED,
+            ):
                 return None
             if code in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED):
                 raise ConnectionError(
