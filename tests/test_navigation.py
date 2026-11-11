@@ -351,6 +351,7 @@ async def test_a_start_that_fails_while_the_robot_drives_cancels_the_drive(
 async def test_a_command_of_another_client_ends_the_start_with_error(
     host: Host, fake_robot: FakeKachaka, caplog: pytest.LogCaptureFixture
 ) -> None:
+    fake_robot.replaced_result = True
     robot = await navigation(host, fake_robot)
     fake_robot.speed_scale = 1.0
     await robot.set("navigation", target_positions=["meeting_room"])
@@ -367,6 +368,7 @@ async def test_a_command_of_another_client_ends_the_start_with_error(
 async def test_a_result_skipped_by_the_cursor_comes_from_the_history(
     host: Host, fake_robot: FakeKachaka, caplog: pytest.LogCaptureFixture
 ) -> None:
+    fake_robot.replaced_result = True
     robot = await navigation(host, fake_robot)
     fake_robot.speed_scale = 1.0
     await robot.set("navigation", target_positions=["meeting_room"])
@@ -427,6 +429,7 @@ async def test_stop_leaves_a_command_of_another_client(host: Host, fake_robot: F
 async def test_stop_leaves_a_command_that_replaced_the_drive(
     host: Host, fake_robot: FakeKachaka
 ) -> None:
+    fake_robot.replaced_result = True
     robot = await navigation(host, fake_robot)
     fake_robot.speed_scale = 1.0
     await robot.set("navigation", target_positions=["meeting_room"])

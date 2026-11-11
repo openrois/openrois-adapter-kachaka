@@ -19,9 +19,11 @@ next command fail, ``preempt()`` starts a command of another client, ``hold_star
 keeps the answers of StartCommand back until ``release_starts()``, and ``received`` logs
 every request. ``result_wait`` makes the robot end a wait for the command result with
 CANCELLED after that many seconds, as a real robot does, and ``refuse_results()`` makes it
-refuse the request. ``see()`` sets the persons and the other objects the detector sees,
-``set_detecting(False)`` stops the detector, ``refuse_detection()`` makes the robot refuse
-the request for the detection, and ``clock_offset`` puts the robot's clock ahead.
+refuse the request. A command that a new one replaces ends without a result, as on a real
+robot, unless ``replaced_result`` is set. ``see()`` sets the persons and the other objects
+the detector sees, ``set_detecting(False)`` stops the detector, ``refuse_detection()``
+makes the robot refuse the request for the detection, and ``clock_offset`` puts the
+robot's clock ahead.
 
 Run it on its own, for the adapter with ``adapter.fake.yaml``::
 
@@ -208,6 +210,7 @@ class FakeKachaka(pb2_grpc.KachakaApiServicer):
         # lets it wait.
         self.result_wait: float | None = None
         self.result_refused = False
+        self.replaced_result = False
         # How far the robot's clock is ahead of this machine's, in seconds.
         self.clock_offset = 0.0
 
@@ -415,7 +418,10 @@ class FakeKachaka(pb2_grpc.KachakaApiServicer):
     def _start(self, command: pb2.Command) -> _Running:
         """Put a command in the command slot, cancelling the one there."""
         if self._running is not None:
-            self._finish(self._running, success=False, error_code=CANCELLED)
+            if self.replaced_result:
+                self._finish(self._running, success=False, error_code=CANCELLED)
+            else:
+                self._drop(self._running)
         running = _Running(command_id=uuid.uuid4().hex, command=command)
         self._running = running
         fail, self._fail_next = self._fail_next, None
@@ -486,6 +492,14 @@ class FakeKachaka(pb2_grpc.KachakaApiServicer):
             if left <= 0:
                 break
         self._finish(running, success=True)
+
+    def _drop(self, running: _Running) -> None:
+        """End the command in the slot without a result, as the robot does with a command
+        that a new one replaces."""
+        self._running = None
+        if running.task is not None and running.task is not asyncio.current_task():
+            running.task.cancel()
+        self._state_topic.publish()
 
     def _finish(self, running: _Running, *, success: bool, error_code: int = 0) -> None:
         """End the command in the slot with a result, and record it in the history."""

@@ -511,6 +511,7 @@ async def test_a_pose_the_robot_does_not_give_is_an_error(
 async def test_a_command_of_another_client_ends_the_start_with_error(
     host: Host, fake_robot: FakeKachaka, caplog: pytest.LogCaptureFixture
 ) -> None:
+    fake_robot.replaced_result = True
     robot = await move(host, fake_robot)
     fake_robot.speed_scale = 1.0
     await robot.set("move", line=[2000, 90])
@@ -561,6 +562,24 @@ async def test_a_start_of_navigation_replaces_a_motion_of_move(
     assert "The line failed" in caplog.text
     assert "another command replaced it" in caplog.text
     assert kinds(fake_robot) == ["move_forward_command", "move_to_location_command"]
+    assert fake_robot.requests("CancelCommand") == []
+
+
+async def test_a_replaced_start_ends_while_the_other_motion_still_runs(
+    host: Host, fake_robot: FakeKachaka, caplog: pytest.LogCaptureFixture
+) -> None:
+    robot = await move_and_navigation(host, fake_robot)
+    fake_robot.speed_scale = 1.0
+    await robot.set("navigation", target_positions=["meeting_room"])
+    await robot.set("move", line=[2000, 0])
+    motion = await robot.execute("move", "start")
+    old = await moving(fake_robot)
+    drive = await robot.execute("navigation", "start")
+    assert await robot.completed(motion, timeout=1.0) == "ERROR"
+    assert "another command replaced it" in caplog.text
+    assert fake_robot.running_command_id not in (None, old)
+    fake_robot.speed_scale = 20.0
+    assert await robot.completed(drive) == "OK"
     assert fake_robot.requests("CancelCommand") == []
 
 

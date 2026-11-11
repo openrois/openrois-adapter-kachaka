@@ -418,6 +418,7 @@ async def test_run_command_returns_a_refused_start(host: Host, fake_robot: FakeK
 
 
 async def test_a_command_of_another_client_ends_ours(host: Host, fake_robot: FakeKachaka) -> None:
+    fake_robot.replaced_result = True
     connection = await opened(host, fake_robot)
     task = asyncio.create_task(connection.run_command(move_to("meeting_room")))
     await wait_for(lambda: fake_robot.running_command_id is not None)
@@ -430,6 +431,7 @@ async def test_a_command_of_another_client_ends_ours(host: Host, fake_robot: Fak
 async def test_a_result_skipped_by_the_cursor_comes_from_the_history(
     host: Host, fake_robot: FakeKachaka
 ) -> None:
+    fake_robot.replaced_result = True
     connection = await opened(host, fake_robot)
     started: list[str] = []
     task = asyncio.create_task(connection.run_command(move_to("kitchen"), started=started.append))
@@ -522,6 +524,7 @@ async def test_cancel_leaves_the_command_of_another_owner(
 async def test_cancel_leaves_a_command_of_another_client(
     host: Host, fake_robot: FakeKachaka
 ) -> None:
+    fake_robot.replaced_result = True
     connection = await opened(host, fake_robot)
     owner = object()
     assert (await connection.run_command(move_to("kitchen"), owner=owner)).success
@@ -553,6 +556,107 @@ async def test_a_command_of_another_owner_replaces_the_running_one(
     # Neither owner has a command left to cancel.
     assert not await connection.cancel(first)
     assert not await connection.cancel(second)
+
+
+async def test_a_replaced_command_ends_at_once_without_a_result(
+    host: Host, fake_robot: FakeKachaka
+) -> None:
+    """The robot gives a replaced command no result: its run does not wait for one."""
+    connection = await opened(host, fake_robot)
+    fake_robot.speed_scale = 1.0
+    first, second = object(), object()
+    replaced = asyncio.create_task(connection.run_command(move_to("meeting_room"), owner=first))
+    old = await running(fake_robot)
+    replacing = asyncio.create_task(connection.run_command(move_to("kitchen"), owner=second))
+    with pytest.raises(CommandPreempted, match=f"{old} was cancelled: another command replaced it"):
+        async with asyncio.timeout(1.0):
+            await replaced
+    # The command that replaced it still runs, and nothing was cancelled.
+    assert fake_robot.running_command_id not in (None, old)
+    assert fake_robot.requests("CancelCommand") == []
+    assert not await connection.cancel(first)
+    fake_robot.speed_scale = 20.0
+    assert (await replacing).success
+
+
+async def test_a_command_that_ended_before_another_started_keeps_its_result(
+    host: Host, fake_robot: FakeKachaka, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Its result is on its way when the other command starts: it was not replaced."""
+    connection = await opened(host, fake_robot)
+    rpc = connection._rpc
+
+    async def late(name: str, request: object, timeout: float, *, long_poll: bool = False) -> Any:
+        answer = await rpc(name, request, timeout, long_poll=long_poll)
+        if long_poll and name == "GetLastCommandResult":
+            await asyncio.sleep(0.3)
+        return answer
+
+    monkeypatch.setattr(connection, "_rpc", late)
+    first, second = object(), object()
+    ended = asyncio.create_task(connection.run_command(move_to("kitchen"), owner=first))
+    await wait_for(lambda: len(fake_robot.history) == 1)
+    fake_robot.speed_scale = 1.0
+    other = asyncio.create_task(connection.run_command(move_to("meeting_room"), owner=second))
+    assert (await ended).success
+    assert fake_robot.running_command_id is not None
+    fake_robot.speed_scale = 20.0
+    assert (await other).success
+    assert fake_robot.requests("CancelCommand") == []
+
+
+async def test_a_robot_that_ends_its_waits_at_once_is_not_asked_without_a_pause(
+    host: Host, fake_robot: FakeKachaka
+) -> None:
+    connection = await opened(host, fake_robot)
+    fake_robot.result_wait = 0.0
+    fake_robot.speed_scale = 1.0
+    task = asyncio.create_task(connection.run_command(move_to("meeting_room")))
+    await running(fake_robot)
+    await asyncio.sleep(1.0)
+    # One wait at the start, then at most five a second.
+    assert 2 <= len(fake_robot.requests("GetLastCommandResult")) <= 9
+    fake_robot.speed_scale = 20.0
+    assert (await task).success
+
+
+async def test_a_caller_cancelled_during_the_cleanup_still_cancels_its_command(
+    host: Host, fake_robot: FakeKachaka, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    connection = await opened(host, fake_robot, poll=0.2)
+    fake_robot.speed_scale = 1.0
+    running_command = connection._running_command
+    looking = asyncio.Event()
+
+    async def slow() -> str | None:
+        looking.set()
+        await asyncio.sleep(0.2)
+        return await running_command()
+
+    monkeypatch.setattr(connection, "_running_command", slow)
+    task = asyncio.create_task(connection.run_command(move_to("meeting_room")))
+    await running(fake_robot)
+    fake_robot.refuse_results()
+    await looking.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    await wait_for(lambda: fake_robot.running_command_id is None)
+    assert len(fake_robot.requests("CancelCommand")) == 1
+
+
+async def test_a_command_of_another_client_without_a_result_ends_ours(
+    host: Host, fake_robot: FakeKachaka
+) -> None:
+    connection = await opened(host, fake_robot, poll=0.2)
+    fake_robot.speed_scale = 1.0
+    task = asyncio.create_task(connection.run_command(move_to("kitchen")))
+    await running(fake_robot)
+    other = fake_robot.preempt(move_to("meeting_room"))
+    with pytest.raises(CommandPreempted, match="ended without a result: another command replaced"):
+        await task
+    assert fake_robot.running_command_id == other
+    assert fake_robot.requests("CancelCommand") == []
 
 
 async def test_a_refused_command_does_not_replace_the_running_one(
