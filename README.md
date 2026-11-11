@@ -34,7 +34,7 @@ serves the robot's four components.
 
 ## Status
 
-Version 0.1.0, alpha, pre-1.0, unstable API. The four components and the adapter command
+Version 0.1.0a1, alpha, pre-1.0, unstable API. The four components and the adapter command
 run on the released `openrois-engine`, `openrois-components-core` and
 `openrois-interfaces`, and pass their tests against the fake robot that comes with the
 adapter. They have not been verified on a robot yet, so the points under
@@ -139,12 +139,13 @@ on a robot:
 ## Install
 
 The adapter needs Python 3.12: the Kachaka API package pins a gRPC version that has no
-wheel for a later Python. From a clone of this repository, install the adapter with the
-`robot` extra, which brings the Kachaka API package, and the gateway:
+wheel for a later Python. Install the adapter with the `robot` extra, which brings the
+Kachaka API package, and the gateway:
 
 ```bash
 uv venv --python 3.12 ~/venvs/openrois-kachaka
-uv pip install --python ~/venvs/openrois-kachaka ".[robot]" openrois-gateway
+uv pip install --python ~/venvs/openrois-kachaka "openrois-adapter-kachaka[robot]" \
+  openrois-gateway
 ```
 
 The robot's API must be reachable from this machine on port 26400. The Kachaka app
@@ -154,8 +155,8 @@ shows the robot's IP address.
 
 Start an [OpenRoIS gateway](https://pypi.org/project/openrois-gateway/) first,
 `openrois-gateway`, on `ws://127.0.0.1:8765` by default. Then start one adapter per
-robot. Each command runs until Ctrl+C, so give each its own terminal, where the
-environment is active:
+robot, with the settings files of the [next section](#the-settings-files). Each command
+runs until Ctrl+C, so give each its own terminal, where the environment is active:
 
 ```bash
 source ~/venvs/openrois-kachaka/bin/activate
@@ -175,6 +176,71 @@ The adapter checks the robot every `connection.retry` seconds and connects again
 robot that was switched off or dropped off the network is back. The adapter and the
 robot start in any order. Two adapters with different engine ids put two robots behind
 one gateway.
+
+### The Settings Files
+
+The repository and the source distribution ship both files. `adapter.yaml`, for a
+Kachaka on the network:
+
+```yaml
+# Settings of the Kachaka adapter for a Kachaka on the network.
+# OPENROIS_ADAPTER_* environment variables and flags override the four common settings at
+# the top. The sections below them belong to the connection and the components. See
+# README.md for every setting.
+
+gateway_url: ws://127.0.0.1:8765
+engine_id: kachaka
+# The robot's IP address or host name, with :port when the port is not 26400.
+robot_address: 192.168.1.100
+log_level: info
+
+connection:
+  timeout: 5.0
+  retry: 3.0
+  lost_after: 6.0
+  poll: 10.0
+
+navigation:
+  # true or false sets whether the robot returns to its charger on its own; null leaves
+  # the robot's setting as it is.
+  auto_homing: null
+
+person_detection:
+  # Seconds a new number of persons has to hold before it is reported.
+  hold: 2.0
+  # The score, from 0 to 1, from which an object the robot's detector labels as a person
+  # counts.
+  min_score: 0.5
+  # Seconds the robot may send no detection before the component reports WARNING and no
+  # number of persons.
+  max_age: 5.0
+```
+
+`adapter.fake.yaml`, for the fake robot on this machine:
+
+```yaml
+# Settings of the Kachaka adapter for the fake Kachaka on this machine, started with
+# python -m openrois_adapter_kachaka.fake_robot. Select it with --config adapter.fake.yaml.
+
+gateway_url: ws://127.0.0.1:8765
+engine_id: kachaka_fake
+robot_address: 127.0.0.1:26400
+log_level: info
+
+connection:
+  retry: 1.0
+  lost_after: 2.0
+
+person_detection:
+  # Seconds a new number of persons has to hold before it is reported.
+  hold: 2.0
+  # The score, from 0 to 1, from which an object the robot's detector labels as a person
+  # counts.
+  min_score: 0.5
+  # Seconds the robot may send no detection before the component reports WARNING and no
+  # number of persons.
+  max_age: 5.0
+```
 
 ### Settings
 
@@ -225,6 +291,9 @@ ruff format --check .
 mypy
 pytest
 ```
+
+A tag such as `v0.1.0-alpha.1` releases the version of `pyproject.toml`, 0.1.0a1, to
+PyPI, and then creates the GitHub release with its section of the changelog.
 
 ## License
 
