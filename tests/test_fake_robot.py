@@ -316,6 +316,20 @@ async def test_a_preempting_command_runs_in_the_slot(fake_robot: FakeKachaka, st
     assert fake_robot.running_command_id == other
 
 
+async def test_held_starts_answer_once_released(fake_robot: FakeKachaka, stub: Any) -> None:
+    fake_robot.speed_scale = 1.0
+    fake_robot.hold_starts()
+    call = asyncio.ensure_future(stub.StartCommand(_move_to("kitchen"), timeout=2.0))
+    await asyncio.sleep(0.2)
+    # The command runs, but its client has no answer yet.
+    assert fake_robot.running_command_id is not None
+    assert not call.done()
+    fake_robot.release_starts()
+    started = await call
+    assert started.result.success
+    assert started.command_id == fake_robot.running_command_id
+
+
 async def test_auto_homing_is_set_and_logged(fake_robot: FakeKachaka, stub: Any) -> None:
     assert fake_robot.auto_homing
     request = pb2.SetAutoHomingEnabledRequest(enable=False)

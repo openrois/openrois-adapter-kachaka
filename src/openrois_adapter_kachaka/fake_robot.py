@@ -9,8 +9,9 @@ map whose origin is turned.
 
 A test controls it: ``stop()`` and ``start()`` take the robot off the network and back on
 the same port, ``set_ready(False)`` makes it report not ready, ``fail_next()`` makes the
-next command fail, ``preempt()`` starts a command of another client, and ``received``
-logs every request.
+next command fail, ``preempt()`` starts a command of another client, ``hold_starts()``
+keeps the answers of StartCommand back until ``release_starts()``, and ``received`` logs
+every request.
 
 Run it on its own, for the adapter with ``adapter.fake.yaml``::
 
@@ -189,6 +190,8 @@ class FakeKachaka(pb2_grpc.KachakaApiServicer):
         self._last: pb2.GetLastCommandResultResponse | None = None
         self._fail_next: int | None = None
         self._refuse_next: int | None = None
+        self._answer_starts = asyncio.Event()
+        self._answer_starts.set()
 
         cursors = itertools.count(1_000_000)
         self._pose_topic = _Topic(cursors)
@@ -293,6 +296,15 @@ class FakeKachaka(pb2_grpc.KachakaApiServicer):
         if finish:
             self._finish(running, success=True)
         return running.command_id
+
+    def hold_starts(self) -> None:
+        """Keep the answers of StartCommand back: a command starts, but its client does
+        not learn its id until ``release_starts()``."""
+        self._answer_starts.clear()
+
+    def release_starts(self) -> None:
+        """Send the answers of StartCommand that ``hold_starts()`` kept back."""
+        self._answer_starts.set()
 
     def requests(self, method: str) -> list[Any]:
         """The requests received for one RPC, oldest first."""
@@ -493,6 +505,7 @@ class FakeKachaka(pb2_grpc.KachakaApiServicer):
         if refused is not None:
             return pb2.StartCommandResponse(result=pb2.Result(success=False, error_code=refused))
         running = self._start(request.command)
+        await self._answer_starts.wait()
         return pb2.StartCommandResponse(
             result=pb2.Result(success=True), command_id=running.command_id
         )
