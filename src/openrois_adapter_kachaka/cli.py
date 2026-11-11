@@ -13,6 +13,7 @@ engine ids put two robots behind one gateway::
     openrois-adapter-kachaka --config adapter.fake.yaml
 
 The components are ``<engine id>/system_information`` and ``<engine id>/navigation``.
+``<engine id>/move`` moves the robot in straight lines and turns in place.
 The adapter reaches the robot at ``robot_address``, ``host`` or ``host:port``, on port
 26400 by default. While the robot does not answer, the components report ERROR, and the
 adapter drives the robot again once it is back.
@@ -37,6 +38,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from openrois.components.kachaka import (
     KachakaConnection,
+    KachakaMove,
     KachakaNavigation,
     KachakaSystemInformation,
 )
@@ -128,6 +130,7 @@ def build_engine(config: KachakaConfig) -> Engine:
     engine.add_component(
         "navigation", KachakaNavigation(connection, auto_homing=config.navigation.auto_homing)
     )
+    engine.add_component("move", KachakaMove(connection))
     return engine
 
 

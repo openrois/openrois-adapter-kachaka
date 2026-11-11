@@ -12,6 +12,7 @@ from openrois.engine.config import ConfigError
 
 from openrois.components.kachaka import (
     KachakaConnection,
+    KachakaMove,
     KachakaNavigation,
     KachakaSystemInformation,
 )
@@ -182,10 +183,12 @@ def test_build_engine_hosts_the_components_on_one_connection() -> None:
     assert [type(c) for c in components] == [
         KachakaSystemInformation,
         KachakaNavigation,
+        KachakaMove,
     ]
     assert [c.ref for c in components if isinstance(c, Component)] == [
         "kachaka_2/system_information",
         "kachaka_2/navigation",
+        "kachaka_2/move",
     ]
     [connection] = components[0].rois_resources()
     assert isinstance(connection, KachakaConnection)
