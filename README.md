@@ -75,6 +75,8 @@ Navigation and Move share that one place:
   The start that was replaced ends with ERROR and says that another command replaced it.
 - A command from the Kachaka app or another client ends a running `start` with ERROR in
   the same way.
+- A `start` that ends with ERROR because the robot refused a call cancels its own
+  command, so the robot does not drive on after the application was told of the error.
 
 The Kachaka has no pause. `suspend` cancels the motion on the robot and holds the
 `start`, and `resume` continues it: Navigation drives to the same target again, and Move

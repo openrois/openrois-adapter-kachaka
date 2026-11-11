@@ -374,7 +374,8 @@ class KachakaConnection(Resource):
             ConnectionError: The robot did not answer the start, or stopped answering
                 while the command ran, for ``lost_after`` seconds. The robot may still
                 move.
-            RuntimeError: The connection is not open, or the robot refused a call.
+            RuntimeError: The connection is not open, or the robot refused a call. A
+                command that ran by then is cancelled on the robot.
         """
         from kachaka_api.generated import kachaka_api_pb2 as pb2
 
@@ -403,6 +404,11 @@ class KachakaConnection(Resource):
             self._owners.pop(command_id, None)
             raise
         except asyncio.CancelledError:
+            await self._cancel_own(command_id)
+            raise
+        except RuntimeError:
+            # The robot refused a call while the command ran, so nobody follows the
+            # command any more: it does not go on without its caller.
             await self._cancel_own(command_id)
             raise
         if not result.success:
@@ -553,7 +559,9 @@ class KachakaConnection(Resource):
     ) -> Any:
         """Call an RPC with a deadline, turning gRPC errors into Python ones.
 
-        With ``long_poll``, a deadline that passes returns None.
+        With ``long_poll``, a wait that ends without data returns None: the deadline
+        passed, or the robot ended the wait itself, which it does with CANCELLED after
+        some seconds.
         """
         stub, channel, grpc = self._stub, self._channel, self._grpc
         if stub is None:
@@ -571,7 +579,10 @@ class KachakaConnection(Resource):
             raise
         except grpc.aio.AioRpcError as exc:
             code = exc.code()
-            if code == grpc.StatusCode.DEADLINE_EXCEEDED and long_poll:
+            if long_poll and code in (
+                grpc.StatusCode.DEADLINE_EXCEEDED,
+                grpc.StatusCode.CANCELLED,
+            ):
                 return None
             if code in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED):
                 raise ConnectionError(

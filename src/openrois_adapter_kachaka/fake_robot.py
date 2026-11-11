@@ -17,7 +17,9 @@ A test controls it: ``stop()`` and ``start()`` take the robot off the network an
 the same port, ``set_ready(False)`` makes it report not ready, ``fail_next()`` makes the
 next command fail, ``preempt()`` starts a command of another client, ``hold_starts()``
 keeps the answers of StartCommand back until ``release_starts()``, and ``received`` logs
-every request. ``see()`` sets the persons and the other objects the detector sees,
+every request. ``result_wait`` makes the robot end a wait for the command result with
+CANCELLED after that many seconds, as a real robot does, and ``refuse_results()`` makes it
+refuse the request. ``see()`` sets the persons and the other objects the detector sees,
 ``set_detecting(False)`` stops the detector, ``refuse_detection()`` makes the robot refuse
 the request for the detection, and ``clock_offset`` puts the robot's clock ahead.
 
@@ -201,6 +203,11 @@ class FakeKachaka(pb2_grpc.KachakaApiServicer):
         self.detection_period = DETECTION_PERIOD
         self.detecting = True
         self.detection_refused = False
+        # How long a request for the command result may wait before the robot ends the
+        # wait with CANCELLED, in seconds, as a real robot does after some seconds. None
+        # lets it wait.
+        self.result_wait: float | None = None
+        self.result_refused = False
         # How far the robot's clock is ahead of this machine's, in seconds.
         self.clock_offset = 0.0
 
@@ -365,6 +372,10 @@ class FakeKachaka(pb2_grpc.KachakaApiServicer):
     def refuse_detection(self, refused: bool = True) -> None:
         """Whether the robot refuses GetObjectDetection, as software without the RPC does."""
         self.detection_refused = refused
+
+    def refuse_results(self, refused: bool = True) -> None:
+        """Whether the robot refuses GetLastCommandResult, with INTERNAL."""
+        self.result_refused = refused
 
     def requests(self, method: str) -> list[Any]:
         """The requests received for one RPC, oldest first."""
@@ -671,7 +682,13 @@ class FakeKachaka(pb2_grpc.KachakaApiServicer):
         self, request: pb2.GetRequest, context: Any
     ) -> pb2.GetLastCommandResultResponse:
         self._log("GetLastCommandResult", request)
-        await self._result_topic.wait(request.metadata.cursor)
+        if self.result_refused:
+            await context.abort(grpc.StatusCode.INTERNAL, "No result")
+        try:
+            async with asyncio.timeout(self.result_wait):
+                await self._result_topic.wait(request.metadata.cursor)
+        except TimeoutError:
+            await context.abort(grpc.StatusCode.CANCELLED, "")
         response = pb2.GetLastCommandResultResponse()
         if self._last is not None:
             response.CopyFrom(self._last)
