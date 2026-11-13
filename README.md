@@ -36,8 +36,8 @@ serves the robot's four components.
 
 Version 0.1.0a1, alpha, pre-1.0, unstable API. The four components and the adapter command
 run on the released `openrois-engine`, `openrois-components-core` and
-`openrois-interfaces`, and pass their tests against the fake robot that comes with the
-adapter. They were also run on a Kachaka: [On a Robot](#on-a-robot) says what that run
+`openrois-interfaces`, and pass their tests against the simulated Kachaka that comes with
+the adapter. They were also run on a Kachaka: [On a Robot](#on-a-robot) says what that run
 showed and what is still open. The settings and the behaviour may still change before
 1.0.
 
@@ -152,7 +152,7 @@ Still open:
   line, and 0.3 m/s was not run.
 - A robot without a shelf, `time_limit`, a pose as a target, two applications at once
   and the loss of the robot during a motion were not part of the run. The tests cover
-  them against the fake robot only.
+  them against the simulated Kachaka only.
 - That a `start` which another component replaced ends at once was added after the run.
   On the robot it ended 9 seconds later.
 
@@ -187,7 +187,7 @@ openrois-gateway
 # The Kachaka on the network, at its IP address.
 openrois-adapter-kachaka --config adapter.yaml --robot-address 192.168.1.100
 
-# The fake Kachaka on this machine, for a try without a robot.
+# The simulated Kachaka on this machine, for a try without a robot.
 python -m openrois_adapter_kachaka.fake_robot
 openrois-adapter-kachaka --config adapter.fake.yaml
 ```
@@ -236,10 +236,10 @@ person_detection:
   max_age: 5.0
 ```
 
-`adapter.fake.yaml`, for the fake robot on this machine:
+`adapter.fake.yaml`, for the simulated Kachaka on this machine:
 
 ```yaml
-# Settings of the Kachaka adapter for the fake Kachaka on this machine, started with
+# Settings of the Kachaka adapter for the simulated Kachaka on this machine, started with
 # python -m openrois_adapter_kachaka.fake_robot. Select it with --config adapter.fake.yaml.
 
 gateway_url: ws://127.0.0.1:8765
@@ -298,11 +298,11 @@ The adapter reconnects to the gateway whenever the connection drops. Ctrl+C stop
 - `src/openrois/components/kachaka/`: the components and their shared connection,
   imported as `openrois.components.kachaka`.
 - `src/openrois_adapter_kachaka/`: the adapter command, one process per robot, and
-  `fake_robot`, a stand-in that serves the Kachaka gRPC API on this machine.
+  `fake_robot`, a simulated Kachaka that serves the Kachaka gRPC API on this machine.
 
 ## Development
 
-The tests run without a robot: the fake robot plays it. From a clone of the repository:
+The tests run without a robot: the simulated Kachaka plays it. From a clone of the repository:
 
 ```bash
 python -m pip install -e ".[dev]"   # The OpenRoIS packages and the gateway, for the tests

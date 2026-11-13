@@ -1,4 +1,4 @@
-# Settings of the Kachaka adapter for the fake Kachaka on this machine, started with
+# Settings of the Kachaka adapter for the simulated Kachaka on this machine, started with
 # python -m openrois_adapter_kachaka.fake_robot. Select it with --config adapter.fake.yaml.
 
 gateway_url: ws://127.0.0.1:8765

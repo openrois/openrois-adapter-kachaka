@@ -8,7 +8,7 @@ engine ids put two robots behind one gateway::
     # The Kachaka on the network, at its IP address
     openrois-adapter-kachaka --config adapter.yaml --robot-address 192.168.1.100
 
-    # The fake Kachaka on this machine, started with
+    # The simulated Kachaka on this machine, started with
     # python -m openrois_adapter_kachaka.fake_robot
     openrois-adapter-kachaka --config adapter.fake.yaml
 
